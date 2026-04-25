@@ -318,35 +318,65 @@ func (m model) bandwidthChartHeaderView() string {
 }
 
 func (m model) hotkeyBarView() string {
-	hotkey := func(active lipgloss.Style, enabled bool, key string) string {
-		style := active.Inherit(m.styles.HeaderBold)
-		if !enabled {
-			style = lipgloss.NewStyle().Inherit(m.styles.HeaderBold).Foreground(m.styles.Palette.Subtle)
-		}
-		return style.Render(fmt.Sprintf(" %s ", key))
+	type hotkeyItem struct {
+		key     string
+		label   string
+		style   lipgloss.Style
+		enabled bool
 	}
 
-	return m.headerBar(m.width,
-		lipgloss.JoinHorizontal(lipgloss.Top,
-			m.styles.HeaderBold.Render(fmt.Sprintf(" %s ", keyQuit)),
-			m.styles.HeaderSecondary.Render("quit "),
-			m.styles.HeaderBold.Render(fmt.Sprintf(" %s ", keyPause)),
-			m.styles.HeaderSecondary.Render("pause "),
-			m.styles.HeaderBold.Render(fmt.Sprintf(" %s ", keyReset)),
-			m.styles.HeaderSecondary.Render("reset "),
-			hotkey(m.styles.Compute, m.seriesEnabled(computeSeries), keyCompute),
-			m.styles.HeaderSecondary.Render("comp "),
-			hotkey(m.styles.Memory, m.seriesEnabled(memorySeries), keyMemory),
-			m.styles.HeaderSecondary.Render("mem "),
-			hotkey(m.styles.PCIe, m.seriesEnabled(pcieSeries), keyPcie),
-			m.styles.HeaderSecondary.Render("pcie "),
-			hotkey(m.styles.NVLink, m.seriesEnabled(nvlinkSeries), keyNvlink),
-			m.styles.HeaderSecondary.Render("nvlink "),
-			hotkey(m.styles.PCIe, m.showBandwidth, keyHideBandwidth),
-			m.styles.HeaderSecondary.Render("toggle bandwidth "),
-			hotkey(m.styles.HeaderBold, m.highContrast, keyHighContrast),
-			m.styles.HeaderSecondary.Render("toggle high contrast "),
-		))
+	hotkey := func(item hotkeyItem) string {
+		style := item.style.Inherit(m.styles.HeaderBold)
+		if !item.enabled {
+			style = lipgloss.NewStyle().Inherit(m.styles.HeaderBold).Foreground(m.styles.Palette.Subtle)
+		}
+		return lipgloss.JoinHorizontal(lipgloss.Top,
+			style.Render(fmt.Sprintf(" %s ", item.key)),
+			m.styles.HeaderSecondary.Render(item.label+" "),
+		)
+	}
+
+	section := func(items ...hotkeyItem) string {
+		parts := make([]string, 0, len(items))
+		for _, item := range items {
+			parts = append(parts, hotkey(item))
+		}
+		return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	}
+
+	toggleLabel := func(enabled bool, showLabel, hideLabel string) string {
+		if enabled {
+			return hideLabel
+		}
+		return showLabel
+	}
+
+	seriesItems := []hotkeyItem{
+		{key: keyCompute, label: "comp", style: m.styles.Compute, enabled: m.seriesEnabled(computeSeries)},
+		{key: keyMemory, label: "mem", style: m.styles.Memory, enabled: m.seriesEnabled(memorySeries)},
+	}
+	if m.showBandwidth {
+		seriesItems = append(seriesItems,
+			hotkeyItem{key: keyPcie, label: "pcie", style: m.styles.PCIe, enabled: m.seriesEnabled(pcieSeries)},
+			hotkeyItem{key: keyNvlink, label: "nvlink", style: m.styles.NVLink, enabled: m.seriesEnabled(nvlinkSeries)},
+		)
+	}
+
+	sections := []string{
+		section(
+			hotkeyItem{key: keyQuit, label: "quit", style: m.styles.HeaderBold, enabled: true},
+			hotkeyItem{key: keyPause, label: "pause", style: m.styles.HeaderBold, enabled: true},
+			hotkeyItem{key: keyReset, label: "reset", style: m.styles.HeaderBold, enabled: true},
+		),
+		section(
+			hotkeyItem{key: keyDetail, label: toggleLabel(m.detailMode, "show detail", "hide detail"), style: m.styles.HeaderBold, enabled: true},
+			hotkeyItem{key: keyBandwidth, label: toggleLabel(m.showBandwidth, "show bandwidth", "hide bandwidth"), style: m.styles.HeaderBold, enabled: true},
+		),
+		section(seriesItems...),
+	}
+
+	divider := m.styles.HeaderSecondary.Render(" │ ")
+	return m.headerBar(m.width, strings.Join(sections, divider))
 }
 
 func (m model) formatTimeSince(chart *tschart.Model, _ float64, index, n int) string {

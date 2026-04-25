@@ -68,8 +68,8 @@ func (m *Model) SetStyles(borderStyle, axisStyle, panelStyle lipgloss.Style) {
 	m.Resize(m.width, m.height)
 }
 
-func WithPlainLines() Option {
+func WithDetailMode(enabled bool) Option {
 	return func(m *Model) {
-		m.PlainLines = true
+		m.DetailMode = enabled
 	}
 }
