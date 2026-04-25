@@ -21,20 +21,13 @@ type Styles struct {
 	DotOnline       string
 }
 
-func NewStyles(dark, highContrast bool) Styles {
+func NewStyles(dark bool) Styles {
 	palette := NewPalette(dark)
 
-	borderFg := palette.Subtle
-	axisFg := palette.Subtle
-	computeFg := palette.Compute
-	memoryFg := palette.Memory
-	if highContrast {
-		white := lipgloss.Color("15")
-		borderFg = white
-		axisFg = white
-		computeFg = lipgloss.Color("#00D7FF")
-		memoryFg = lipgloss.Color("#FF5F00")
-	}
+	borderFg := lipgloss.Color("15")
+	axisFg := lipgloss.Color("15")
+	computeFg := lipgloss.Color("#00D7FF")
+	memoryFg := lipgloss.Color("#FF5F00")
 
 	header := lipgloss.NewStyle().
 		Background(palette.Surface).

@@ -47,9 +47,9 @@ type model struct {
 
 	gpuCeilings map[int]GpuCeiling
 
-	highContrast bool
-	dark         bool
-	styles       theme.Styles
+	dark       bool
+	detailMode bool
+	styles     theme.Styles
 }
 
 func (m model) Init() tea.Cmd {
@@ -88,9 +88,7 @@ func (m *model) initCharts(deviceIDs []int) {
 				return fmt.Sprintf("%2d", index*100/(n-1))
 			}),
 			tschart.WithStyles(m.styles.ChartBorder, m.styles.ChartAxis, m.styles.ChartPanel),
-		}
-		if m.highContrast {
-			opts = append(opts, tschart.WithPlainLines())
+			tschart.WithDetailMode(m.detailMode),
 		}
 		m.solCharts[i] = tschart.New(m.width, m.height, opts...)
 		m.solCharts[i].SetSeriesStyle(computeSeries, m.styles.Compute.Inherit(m.styles.ChartPanel))
@@ -110,9 +108,7 @@ func (m *model) initCharts(deviceIDs []int) {
 			return format.SI(v, bytesSIWidth)
 		}),
 		tschart.WithStyles(m.styles.ChartBorder, m.styles.ChartAxis, m.styles.ChartPanel),
-	}
-	if m.highContrast {
-		bwOpts = append(bwOpts, tschart.WithPlainLines())
+		tschart.WithDetailMode(m.detailMode),
 	}
 	m.bandwidthChart = tschart.New(m.width, m.height, bwOpts...)
 	m.bandwidthChart.EnableAxes(true, true)
@@ -164,7 +160,7 @@ func (m *model) resetCharts() {
 }
 
 func (m *model) applyTheme() {
-	m.styles = theme.NewStyles(m.dark, m.highContrast)
+	m.styles = theme.NewStyles(m.dark)
 	m.spinner = spinner.New(&m.styles.Spinner)
 
 	for _, chart := range m.solCharts {
@@ -189,6 +185,18 @@ func (m *model) applyTheme() {
 	m.applyCeilingThresholds()
 }
 
+func (m *model) applyDetailMode() {
+	for _, chart := range m.solCharts {
+		if chart == nil {
+			continue
+		}
+		chart.SetDetailMode(m.detailMode)
+	}
+	if m.bandwidthChart != nil {
+		m.bandwidthChart.SetDetailMode(m.detailMode)
+	}
+}
+
 func New(w int, h int, opts ...Option) model {
 	m := model{
 		width:         max(w, 1),
@@ -196,7 +204,6 @@ func New(w int, h int, opts ...Option) model {
 		drawInterval:  100 * time.Millisecond,
 		resolution:    200 * time.Millisecond,
 		showBandwidth: true,
-		highContrast:  true,
 		dark:          true,
 
 		enabledSeries: []string{computeSeries, memorySeries, nvlinkSeries, pcieSeries},
@@ -204,7 +211,7 @@ func New(w int, h int, opts ...Option) model {
 	for _, opt := range opts {
 		opt(&m)
 	}
-	m.styles = theme.NewStyles(m.dark, m.highContrast)
+	m.styles = theme.NewStyles(m.dark)
 	m.spinner = spinner.New(&m.styles.Spinner)
 	return m
 }

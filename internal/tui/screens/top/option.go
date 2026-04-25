@@ -15,9 +15,3 @@ func WithResolution(resolution time.Duration) Option {
 		m.resolution = resolution
 	}
 }
-
-func WithHighContrast(highContrast bool) Option {
-	return func(m *model) {
-		m.highContrast = highContrast
-	}
-}

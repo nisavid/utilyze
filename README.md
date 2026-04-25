@@ -75,7 +75,6 @@ Flags (most have environment variable equivalents):
 
 Environment variables only:
 
-- `UTLZ_HIGH_CONTRAST`: enable high contrast mode (default: `true`)
 - `UTLZ_DISABLE_PROFILING_WARNING`: disable the warning about GPU profiling capabilities on startup
 - `UTLZ_BACKEND_URL`: set the backend URL for Systalyze's roofline SOL metrics API (default: `https://api.systalyze.com/v1/utilyze`)
 - `UTLZ_DISABLE_METRICS`: disable workload detection and Systalyze roofline SOL metrics API

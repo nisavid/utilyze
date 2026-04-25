@@ -8,15 +8,15 @@ import (
 )
 
 const (
-	keyQuit          = "q"
-	keyPause         = "space"
-	keyReset         = "r"
-	keyCompute       = "c"
-	keyMemory        = "m"
-	keyNvlink        = "n"
-	keyPcie          = "p"
-	keyHideBandwidth = "b"
-	keyHighContrast  = "h"
+	keyQuit      = "q"
+	keyPause     = "space"
+	keyReset     = "r"
+	keyCompute   = "c"
+	keyMemory    = "m"
+	keyNvlink    = "n"
+	keyPcie      = "p"
+	keyBandwidth = "b"
+	keyDetail    = "d"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -43,9 +43,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleSeries(memorySeries)
 			return m, m.beginDraw()
 		case keyNvlink:
+			if !m.showBandwidth {
+				return m, nil
+			}
 			m.toggleSeries(nvlinkSeries)
 			return m, m.beginDraw()
 		case keyPcie:
+			if !m.showBandwidth {
+				return m, nil
+			}
 			m.toggleSeries(pcieSeries)
 			return m, m.beginDraw()
 		case keyReset:
@@ -59,13 +65,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pausedAt = time.Time{}
 			}
 			return m, m.beginDraw()
-		case keyHideBandwidth:
+		case keyBandwidth:
 			m.showBandwidth = !m.showBandwidth
 			m.applyLayout()
 			return m, m.beginDraw()
-		case keyHighContrast:
-			m.highContrast = !m.highContrast
-			m.applyTheme()
+		case keyDetail:
+			m.detailMode = !m.detailMode
+			m.applyDetailMode()
 			return m, m.beginDraw()
 		default:
 			return m, nil

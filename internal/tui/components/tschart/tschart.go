@@ -45,7 +45,7 @@ type Model struct {
 	AxisStyle   lipgloss.Style
 	PanelStyle  lipgloss.Style
 
-	PlainLines bool
+	DetailMode bool
 
 	width, height    int
 	canvasW, canvasH int
@@ -188,7 +188,8 @@ func (m *Model) Resize(width, height int) {
 }
 
 func (m *Model) buildGrids() {
-	if m.PlainLines {
+	if !m.DetailMode {
+		m.grids = nil
 		m.lineGrids = make(map[string]*lineGrid)
 		for name := range m.series {
 			g := newLineGrid(m.canvasW, m.canvasH)
@@ -196,6 +197,7 @@ func (m *Model) buildGrids() {
 		}
 		return
 	}
+	m.lineGrids = nil
 	m.grids = make(map[string]*brailleGrid)
 	for name := range m.series {
 		g := newBrailleGrid(m.canvasW, m.canvasH)
@@ -228,7 +230,7 @@ func (m *Model) tickRow(pct float64) int {
 	if m.canvasH <= 1 {
 		return 0
 	}
-	if m.PlainLines {
+	if !m.DetailMode {
 		return int(math.Round((1 - pct) * float64(m.canvasH-1)))
 	}
 	graphH := m.canvasH * 4
@@ -260,6 +262,9 @@ func (m *Model) ensureLineGrid(seriesName string) {
 // The first name in seriesNames is the topmost layer (first non-empty cell wins).
 func (m *Model) Draw(seriesNames []string, now time.Time) {
 	m.seriesRenderCache = slices.Clone(seriesNames)
+	if m.Resolution > 0 {
+		now = now.Truncate(m.Resolution)
+	}
 	windowStart := now.Add(-m.TimeRange())
 
 	yRange := m.yRangeForDraw(seriesNames, windowStart, now)
@@ -271,7 +276,7 @@ func (m *Model) Draw(seriesNames []string, now time.Time) {
 		m.viewDirty = true
 	}
 
-	if m.PlainLines {
+	if !m.DetailMode {
 		for _, g := range m.lineGrids {
 			g.clear()
 		}
@@ -316,7 +321,7 @@ func (m *Model) renderChart(seriesNames []string) string {
 	if m.canvasW <= 0 || m.canvasH <= 0 {
 		return ""
 	}
-	if m.PlainLines {
+	if !m.DetailMode {
 		return m.renderChartPlain(seriesNames)
 	}
 	return m.renderChartBraille(seriesNames)
@@ -494,8 +499,20 @@ func (m *Model) SetThresholds(thresholds []ThresholdLine) {
 	m.viewDirty = true
 }
 
+func (m *Model) SetDetailMode(enabled bool) {
+	if m.DetailMode == enabled {
+		return
+	}
+	m.DetailMode = enabled
+	m.buildGrids()
+	m.buildThresholdGrids()
+	m.chartCache = m.renderChart(m.seriesRenderCache)
+	m.viewDirty = true
+}
+
 func (m *Model) buildThresholdGrids() {
-	if m.PlainLines {
+	if !m.DetailMode {
+		m.thresholdGrids = nil
 		m.thresholdLineGrids = make([]*lineGrid, len(m.thresholds))
 		if m.canvasW <= 0 || m.canvasH <= 0 {
 			return
@@ -516,6 +533,7 @@ func (m *Model) buildThresholdGrids() {
 		return
 	}
 
+	m.thresholdLineGrids = nil
 	m.thresholdGrids = make([]*brailleGrid, len(m.thresholds))
 	if m.canvasW <= 0 || m.canvasH <= 0 {
 		return
