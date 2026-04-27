@@ -16,12 +16,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/systalyze/utilyze/internal/config"
 	"github.com/systalyze/utilyze/internal/ffi/cupti"
 	"github.com/systalyze/utilyze/internal/ffi/nvml"
 	"github.com/systalyze/utilyze/internal/ffi/sampler"
 	"github.com/systalyze/utilyze/internal/inference"
 	"github.com/systalyze/utilyze/internal/inference/vllm"
 	"github.com/systalyze/utilyze/internal/metrics"
+	"github.com/systalyze/utilyze/internal/service"
 	"github.com/systalyze/utilyze/internal/tui/screens/top"
 	"github.com/systalyze/utilyze/internal/version"
 
@@ -35,7 +38,21 @@ const (
 	metricsInterval   = 250 * time.Millisecond
 	inferenceCacheTTL = 30 * time.Second
 	vllmProbeTimeout  = 2 * time.Second
+
+	serviceModeEnv = "UTLZ_SERVICE_MODE"
+	serviceAddrEnv = "UTLZ_SERVICE_ADDR"
+
+	serviceModeAuto   = "auto"
+	serviceModeServer = "server"
+	serviceModeClient = "client"
 )
+
+type runConfig struct {
+	mode        string
+	connectAddr string
+	listenAddr  string
+	config      config.Config
+}
 
 func main() {
 	var showVersion bool
@@ -44,9 +61,19 @@ func main() {
 	var logFile string
 	var logLevel string
 
+	var serviceAddr string
+	var serviceMode string
+	var servicePort string
+
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
-	flag.BoolVar(&showEndpoints, "endpoints", false, "show discovered inference server endpoints per GPU")
 	flag.StringVar(&devices, "devices", os.Getenv("UTLZ_DEVICES"), "comma-separated list of device IDs to monitor")
+	flag.BoolVar(&showEndpoints, "endpoints", false, "show discovered inference server endpoints per GPU")
+
+	flag.StringVar(&serviceAddr, "connect", os.Getenv(serviceAddrEnv), "address to connect to for remote metrics over websocket")
+	flag.StringVar(&serviceAddr, "c", os.Getenv(serviceAddrEnv), "address to connect to for remote metrics over websocket")
+	flag.StringVar(&serviceMode, "mode", defaultServiceMode(), "service mode to run in (auto, server, client)")
+	flag.StringVar(&servicePort, "port", "8079", "port to listen on for server mode")
+
 	flag.StringVar(&logFile, "log", os.Getenv("UTLZ_LOG"), "log file to write to")
 	flag.StringVar(&logLevel, "log-level", "INFO", "log level for the chat service")
 
@@ -77,15 +104,25 @@ func main() {
 		return
 	}
 
+	_ = version.CheckForUpdates(context.Background(), version.VERSION)
+
 	deviceIds, err := parseDeviceIDs(devices)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 
-	_ = version.CheckForUpdates(context.Background(), version.VERSION)
+	if serviceAddr != "" && serviceMode == serviceModeAuto {
+		serviceMode = serviceModeClient
+	}
 
-	if err := run(context.Background(), deviceIds); err != nil {
+	runCfg := runConfig{
+		mode:        serviceMode,
+		connectAddr: serviceAddress(serviceAddr, servicePort),
+		listenAddr:  serviceAddress("", servicePort),
+		config:      config.Load(),
+	}
+	if err := run(context.Background(), deviceIds, runCfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -137,25 +174,178 @@ func runShowEndpoints(ctx context.Context) error {
 	return nil
 }
 
-func run(ctx context.Context, deviceIds []int) error {
-	if err := cupti.EnsureLoaded(); err != nil {
+func run(ctx context.Context, deviceIds []int, runCfg runConfig) error {
+	mode, err := serviceMode(runCfg.mode)
+	if err != nil {
 		return err
 	}
 
-	showWarning := os.Getenv("UTLZ_DISABLE_PROFILING_WARNING") != "1"
-	if hasCaps, _ := sampler.HasProfilingCapabilities(); !hasCaps && showWarning {
-		fmt.Fprintln(os.Stderr, "Warning: GPU profiling requires CAP_SYS_ADMIN. You will likely need to run with sudo:")
-		fmt.Fprintln(os.Stderr, "  sudo utlz")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "If you've disabled the NVIDIA profiling restriction on the host you can ignore this warning. To do so, run:")
-		fmt.Fprintln(os.Stderr, "  echo 'options nvidia NVreg_RestrictProfilingToAdminUsers=0' | sudo tee /etc/modprobe.d/nvidia-profiling.conf")
-		fmt.Fprintln(os.Stderr, "Then either reboot, or reload the driver (stops all GPU processes):")
-		fmt.Fprintln(os.Stderr, "  sudo modprobe -rf nvidia_uvm nvidia_drm nvidia_modeset nvidia && sudo modprobe nvidia")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "To disable this warning and proceed anyway, set UTLZ_DISABLE_PROFILING_WARNING=1")
-		return nil
+	switch mode {
+	case serviceModeServer:
+		return runServer(ctx, deviceIds, runCfg.listenAddr, runCfg.config.ClientID)
+	case serviceModeClient:
+		return runClient(ctx, runCfg.connectAddr, runCfg.config.ClientID)
+	case "", serviceModeAuto:
+		if service.ServerAvailable(ctx, runCfg.connectAddr, runCfg.config.ClientID) {
+			return runClient(ctx, runCfg.connectAddr, runCfg.config.ClientID)
+		}
+		return runLocal(ctx, deviceIds, runCfg.listenAddr, runCfg.config.ClientID)
+	default:
+		return fmt.Errorf("unknown service mode %q", mode)
+	}
+}
+
+func serviceMode(mode string) (string, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "", serviceModeAuto, serviceModeServer, serviceModeClient:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("%s must be %q, %q, or %q", serviceModeEnv, serviceModeAuto, serviceModeServer, serviceModeClient)
+	}
+}
+
+func defaultServiceMode() string {
+	if mode := strings.TrimSpace(os.Getenv(serviceModeEnv)); mode != "" {
+		return mode
+	}
+	return serviceModeAuto
+}
+
+func serviceAddress(addr string, port string) string {
+	if strings.TrimSpace(addr) != "" {
+		return addr
+	}
+	port = strings.TrimSpace(port)
+	if port == "" {
+		port = service.DefaultPort
+	}
+	return service.DefaultHost + ":" + port
+}
+
+func ensureCanCollectMetrics() (bool, error) {
+	if err := cupti.EnsureLoaded(); err != nil {
+		return false, err
+	}
+	if hasCaps, _ := sampler.HasProfilingCapabilities(); hasCaps || os.Getenv("UTLZ_DISABLE_PROFILING_WARNING") == "1" {
+		return true, nil
 	}
 
+	fmt.Fprintln(os.Stderr, "Warning: GPU profiling requires CAP_SYS_ADMIN. You will likely need to run with sudo:")
+	fmt.Fprintln(os.Stderr, "  sudo utlz")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "If you've disabled the NVIDIA profiling restriction on the host you can ignore this warning. To do so, run:")
+	fmt.Fprintln(os.Stderr, "  echo 'options nvidia NVreg_RestrictProfilingToAdminUsers=0' | sudo tee /etc/modprobe.d/nvidia-profiling.conf")
+	fmt.Fprintln(os.Stderr, "Then either reboot, or reload the driver (stops all GPU processes):")
+	fmt.Fprintln(os.Stderr, "  sudo modprobe -rf nvidia_uvm nvidia_drm nvidia_modeset nvidia && sudo modprobe nvidia")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "To disable this warning and proceed anyway, set UTLZ_DISABLE_PROFILING_WARNING=1")
+	return false, nil
+}
+
+func runServer(ctx context.Context, deviceIds []int, addr string, clientID string) error {
+	if ok, err := ensureCanCollectMetrics(); err != nil || !ok {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ctx, stopSignals := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
+	collector, err := metrics.NewCollector(deviceIds, metricsInterval)
+	if err != nil {
+		return err
+	}
+	defer collector.Close()
+
+	connUrl := service.LiveURL(addr)
+	fmt.Fprintf(os.Stderr, "Live metrics URL: %s\n", connUrl)
+	fmt.Fprintf(os.Stderr, "You can view metrics from this machine from another machine by running:")
+	fmt.Fprintf(os.Stderr, "  utlz --connect %s\n", connUrl)
+
+	svc := service.NewService()
+	reporter, err := newMetricsReporter(collector.NVMLClient(), collector.MonitoredDeviceIDs(), clientID, svc.ConnectedClientIDs, func(perGPU map[int]metrics.GpuCeiling) {
+		svc.BroadcastCeilings(perGPU)
+	})
+	if err != nil {
+		return err
+	}
+	if reporter != nil {
+		go reporter.Start(ctx)
+		defer reporter.Stop()
+	}
+
+	go svc.RunCollector(ctx, collector, func(snapshot metrics.MetricsSnapshot) {
+		if reporter != nil {
+			reporter.Observe(snapshot)
+		}
+	})
+
+	return svc.Run(ctx, addr)
+}
+
+func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string) error {
+	svc := service.NewService()
+	return runTUI(ctx, "", func(ctx context.Context, p *tea.Program) error {
+		ok, err := ensureCanCollectMetrics()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("GPU profiling requires CAP_SYS_ADMIN")
+		}
+
+		collector, err := metrics.NewCollector(deviceIds, metricsInterval)
+		if err != nil {
+			return err
+		}
+		defer collector.Close()
+
+		reporter, err := newMetricsReporter(collector.NVMLClient(), collector.MonitoredDeviceIDs(), clientID, svc.ConnectedClientIDs, func(perGPU map[int]metrics.GpuCeiling) {
+			svc.BroadcastCeilings(perGPU)
+			p.Send(top.RooflineCeilingMsg{PerGPU: convertCeilings(perGPU)})
+		})
+		if err != nil {
+			return err
+		}
+		if reporter != nil {
+			go reporter.Start(ctx)
+			defer reporter.Stop()
+		}
+
+		go func() {
+			if err := svc.Run(ctx, addr); err != nil && ctx.Err() == nil {
+				p.Send(top.ErrorMsg{Error: err})
+			}
+		}()
+
+		p.Send(top.InitMsg{DeviceIDs: collector.MonitoredDeviceIDs()})
+		svc.RunCollector(ctx, collector, func(snapshot metrics.MetricsSnapshot) {
+			if reporter != nil {
+				reporter.Observe(snapshot)
+			}
+			p.Send(top.MetricsSnapshotMsg{Timestamp: snapshot.Timestamp, GPUs: snapshot.GPUs})
+		})
+		return nil
+	})
+}
+
+func runClient(ctx context.Context, addr string, clientID string) error {
+	return runTUI(ctx, "", func(ctx context.Context, p *tea.Program) error {
+		// when the server abruptly closes the connection, the JSON parse fails with an invalid frame payload data error
+		err := service.Stream(ctx, addr, clientID, func(event service.Event) error {
+			handleServiceEvent(p, event)
+			return nil
+		})
+		if err != nil && websocket.CloseStatus(err) == websocket.StatusInvalidFramePayloadData {
+			return fmt.Errorf("connection closed by server: %w", err)
+		}
+		return err
+	})
+}
+
+func runTUI(ctx context.Context, connectionURL string, runReporter func(context.Context, *tea.Program) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -167,6 +357,7 @@ func run(ctx context.Context, deviceIds []int) error {
 	screen := top.New(w, h,
 		top.WithRefreshInterval(refreshInterval),
 		top.WithResolution(resolution),
+		top.WithConnectionURL(connectionURL),
 	)
 	p := tea.NewProgram(screen, tea.WithContext(ctx))
 
@@ -181,45 +372,9 @@ func run(ctx context.Context, deviceIds []int) error {
 	}()
 
 	go func() {
-		metricsChan := make(chan metrics.MetricsSnapshot)
-		collector, err := metrics.NewCollector(deviceIds, metricsInterval)
-		if err != nil {
+		err := runReporter(ctx, p)
+		if err != nil && ctx.Err() == nil {
 			p.Send(top.ErrorMsg{Error: err})
-			return
-		}
-		defer collector.Close()
-
-		reporter := newMetricsReporter(collector.NVMLClient(), collector.MonitoredDeviceIDs(), func(perGPU map[int]metrics.GpuCeiling) {
-			gpuCeilings := make(map[int]top.GpuCeiling)
-			for idx, g := range perGPU {
-				gpuCeilings[idx] = top.GpuCeiling{
-					ModelName:         g.ModelName,
-					ComputeSolCeiling: g.ComputeSolCeiling,
-				}
-			}
-			p.Send(top.RooflineCeilingMsg{PerGPU: gpuCeilings})
-		})
-
-		p.Send(top.InitMsg{DeviceIDs: collector.MonitoredDeviceIDs()})
-
-		if reporter != nil {
-			go reporter.Start(ctx)
-		}
-
-		go collector.Start(ctx, metricsChan)
-		for snapshot := range metricsChan {
-			if reporter != nil {
-				reporter.Observe(snapshot)
-			}
-
-			p.Send(top.MetricsSnapshotMsg{
-				Timestamp: snapshot.Timestamp,
-				GPUs:      snapshot.GPUs,
-			})
-		}
-
-		if reporter != nil {
-			reporter.Stop()
 		}
 	}()
 
@@ -228,6 +383,33 @@ func run(ctx context.Context, deviceIds []int) error {
 		return nil
 	}
 	return err
+}
+
+func handleServiceEvent(p *tea.Program, event service.Event) {
+	switch event.Type {
+	case service.EventInit:
+		p.Send(top.InitMsg{DeviceIDs: event.DeviceIDs})
+	case service.EventMetrics:
+		if event.Snapshot != nil {
+			p.Send(top.MetricsSnapshotMsg{Timestamp: event.Snapshot.Timestamp, GPUs: event.Snapshot.GPUs})
+		}
+	case service.EventCeilings:
+		p.Send(top.RooflineCeilingMsg{PerGPU: convertCeilings(event.Ceilings)})
+	}
+}
+
+func convertCeilings(perGPU map[int]metrics.GpuCeiling) map[int]top.GpuCeiling {
+	if len(perGPU) == 0 {
+		return nil
+	}
+	gpuCeilings := make(map[int]top.GpuCeiling, len(perGPU))
+	for idx, g := range perGPU {
+		gpuCeilings[idx] = top.GpuCeiling{
+			ModelName:         g.ModelName,
+			ComputeSolCeiling: g.ComputeSolCeiling,
+		}
+	}
+	return gpuCeilings
 }
 
 func newInferenceScanner(nvmlClient *nvml.Client, cacheTTL time.Duration) inference.Scanner {
@@ -245,33 +427,33 @@ func newInferenceScanner(nvmlClient *nvml.Client, cacheTTL time.Duration) infere
 func newMetricsReporter(
 	nvmlClient *nvml.Client,
 	monitoredDeviceIDs []int,
+	clientID string,
+	clientIDs func() []string,
 	onCeiling func(perGPU map[int]metrics.GpuCeiling),
-) *metrics.Reporter {
+) (*metrics.Reporter, error) {
 	totalGpuCount, err := nvmlClient.GetDeviceCount()
 	if err != nil || totalGpuCount <= 0 {
-		slog.Warn("metrics: disabled, could not query GPU count", "error", err)
-		return nil
+		return nil, fmt.Errorf("could not query GPU count: %w", err)
 	}
 
-	allUUIDs := make([]string, totalGpuCount)
 	allNames := make([]string, totalGpuCount)
 	gpuIDs := make([]string, totalGpuCount)
 	for i := 0; i < totalGpuCount; i++ {
 		uuid, _ := nvmlClient.GetDeviceUUID(i)
-		allUUIDs[i] = uuid
 		allNames[i], _ = nvmlClient.GetDeviceName(i)
-		gpuIDs[i] = metrics.GenerateGpuID(uuid)
+		gpuIDs[i] = config.GenerateGpuID(uuid)
 	}
 
 	return metrics.New(metrics.ReporterConfig{
-		HostID:             metrics.GenerateHostID(allUUIDs),
+		ClientID:           clientID,
+		ClientIDs:          clientIDs,
 		GpuIDs:             gpuIDs,
 		GpuNames:           allNames,
 		TotalGpuCount:      totalGpuCount,
 		Inference:          newInferenceScanner(nvmlClient, inferenceCacheTTL),
 		MonitoredDeviceIDs: monitoredDeviceIDs,
 		OnCeiling:          onCeiling,
-	})
+	}), nil
 }
 
 func parseDeviceIDs(envValue string) ([]int, error) {

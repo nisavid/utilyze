@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -31,7 +32,8 @@ type CeilingCallback func(perGPU map[int]GpuCeiling)
 
 type ReporterConfig struct {
 	BackendURL         string
-	HostID             string
+	ClientID           string
+	ClientIDs          func() []string
 	GpuIDs             []string // indexed by physical device ID
 	GpuNames           []string // indexed by physical device ID
 	TotalGpuCount      int
@@ -75,7 +77,7 @@ func (r *Reporter) Observe(snapshot MetricsSnapshot) {
 func (r *Reporter) Start(ctx context.Context) {
 	ctx, r.cancelFunc = context.WithCancel(ctx)
 
-	jitterMs := hashToInt(r.config.HostID) % 5000
+	jitterMs := hashToInt(r.config.ClientID) % 5000
 	select {
 	case <-ctx.Done():
 		return
@@ -224,7 +226,8 @@ func (r *Reporter) tick(ctx context.Context) {
 
 	payload := MetricsPayload{
 		SchemaVersion: 1,
-		HostID:        r.config.HostID,
+		HostID:        r.config.ClientID, // Deprecated: use ClientIDs.
+		ClientIDs:     r.clientIDs(),
 		SampledAtMs:   window[len(window)-1].Timestamp.UnixMilli(),
 		Mode:          "native",
 		GpuCount:      r.config.TotalGpuCount,
@@ -232,6 +235,27 @@ func (r *Reporter) tick(ctx context.Context) {
 	}
 
 	r.postMetrics(ctx, &payload)
+}
+
+func (r *Reporter) clientIDs() []string {
+	seen := map[string]struct{}{}
+	if r.config.ClientID != "" {
+		seen[r.config.ClientID] = struct{}{}
+	}
+	if r.config.ClientIDs != nil {
+		for _, id := range r.config.ClientIDs() {
+			if id != "" {
+				seen[id] = struct{}{}
+			}
+		}
+	}
+
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (r *Reporter) postMetrics(ctx context.Context, payload *MetricsPayload) {

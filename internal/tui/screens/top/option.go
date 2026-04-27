@@ -15,3 +15,9 @@ func WithResolution(resolution time.Duration) Option {
 		m.resolution = resolution
 	}
 }
+
+func WithConnectionURL(url string) Option {
+	return func(m *model) {
+		m.connectionURL = url
+	}
+}

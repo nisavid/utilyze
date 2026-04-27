@@ -62,6 +62,7 @@ type model struct {
 	pausedAt      time.Time
 	quitting      bool
 	showBandwidth bool
+	connectionURL string
 
 	gpuCeilings map[int]GpuCeiling
 
