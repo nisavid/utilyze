@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build (with native) linux (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -94,9 +94,54 @@ jobs:
           path: out/utlz-linux-${{ matrix.arch }}
           if-no-files-found: error
 
+  build-go:
+    name: Build ${{ matrix.goos }} (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin, goarch: amd64, ext: '' }
+          - { goos: darwin, goarch: arm64, ext: '' }
+          - { goos: windows, goarch: amd64, ext: '.exe' }
+          - { goos: windows, goarch: arm64, ext: '.exe' }
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read version
+        id: version
+        run: |
+          v=$(cat VERSION)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build utlz
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          make utlz GOOS="$GOOS" GOARCH="$GOARCH" VERSION="$VERSION" REPO="$REPO"
+          mkdir -p out
+          mv "dist/utlz-${GOOS}-${GOARCH}" "out/utlz-${GOOS}-${GOARCH}${EXT}"
+
+      - name: Upload utlz binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: utlz-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: out/utlz-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          if-no-files-found: error
+
   release:
     name: Release
-    needs: build
+    needs: [build, build-go]
     if: github.event.inputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -116,12 +161,12 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           path: dist/
-          pattern: '{libutlz_sampler-*,utlz-linux-*}'
+          pattern: '{libutlz_sampler-*,utlz-linux-*,utlz-darwin-*,utlz-windows-*}'
           merge-multiple: true
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum libutlz_sampler-*.tar.gz utlz-linux-* > sha256sums.txt
+        run: sha256sum libutlz_sampler-*.tar.gz utlz-linux-* utlz-darwin-* utlz-windows-* > sha256sums.txt
 
       - name: Create GitHub Release
         env:
@@ -132,4 +177,6 @@ jobs:
             --generate-notes \
             dist/libutlz_sampler-*.tar.gz \
             dist/utlz-linux-* \
+            dist/utlz-darwin-* \
+            dist/utlz-windows-* \
             dist/sha256sums.txt

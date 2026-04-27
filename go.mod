@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/coder/websocket v1.8.14
 	github.com/dustin/go-humanize v1.0.1
 	github.com/ebitengine/purego v0.8.2
 	golang.org/x/mod v0.35.0

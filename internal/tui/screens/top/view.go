@@ -407,7 +407,19 @@ func (m model) hotkeyBarView() string {
 	}
 
 	divider := m.styles.HeaderSecondary.Render(" │ ")
-	return m.headerBar(m.width, strings.Join(sections, divider))
+	left := strings.Join(sections, divider)
+	if m.connectionURL == "" {
+		return m.headerBar(m.width, left)
+	}
+
+	rightText := m.connectionURL + " "
+	available := m.width - lipgloss.Width(left)
+	if available <= 1 {
+		return m.headerBar(m.width, left)
+	}
+	right := m.styles.HeaderSecondary.Render(ansi.Truncate(rightText, available, ""))
+	gap := strings.Repeat(" ", max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 0))
+	return m.headerBar(m.width, left+gap+right)
 }
 
 func (m model) formatTimeSince(chart *tschart.Model, _ float64, index, n int) string {
