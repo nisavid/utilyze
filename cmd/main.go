@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -239,12 +240,21 @@ func ensureCanCollectMetrics() (bool, error) {
 	fmt.Fprintln(os.Stderr, "Then either reboot, or reload the driver (stops all GPU processes):")
 	fmt.Fprintln(os.Stderr, "  sudo modprobe -rf nvidia_uvm nvidia_drm nvidia_modeset nvidia && sudo modprobe nvidia")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "To disable this warning and proceed anyway, set UTLZ_DISABLE_PROFILING_WARNING=1")
-	return false, nil
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "To proceed anyway in non-interactive environments, set UTLZ_DISABLE_PROFILING_WARNING=1")
+		return false, nil
+	}
+
+	fmt.Fprintln(os.Stderr, "Press Enter to continue anyway, or Ctrl-C to quit.")
+	fmt.Fprintln(os.Stderr, "To skip this prompt in the future, set UTLZ_DISABLE_PROFILING_WARNING=1")
+	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+		return false, fmt.Errorf("failed to read confirmation: %w", err)
+	}
+	return true, nil
 }
 
 func runServer(ctx context.Context, deviceIds []int, addr string, clientID string) error {
-	if ok, err := ensureCanCollectMetrics(); err != nil || !ok {
+	if _, err := ensureCanCollectMetrics(); err != nil {
 		return err
 	}
 
@@ -286,16 +296,12 @@ func runServer(ctx context.Context, deviceIds []int, addr string, clientID strin
 }
 
 func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string) error {
+	if _, err := ensureCanCollectMetrics(); err != nil {
+		return err
+	}
+
 	svc := service.NewService()
 	return runTUI(ctx, "", func(ctx context.Context, p *tea.Program) error {
-		ok, err := ensureCanCollectMetrics()
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("GPU profiling requires CAP_SYS_ADMIN")
-		}
-
 		collector, err := metrics.NewCollector(deviceIds, metricsInterval)
 		if err != nil {
 			return err

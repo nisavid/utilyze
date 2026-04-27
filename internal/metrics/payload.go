@@ -3,7 +3,7 @@ package metrics
 type MetricsPayload struct {
 	SchemaVersion int          `json:"schema_version"`
 	HostID        string       `json:"host_id,omitempty"` // Deprecated: use ClientIDs.
-	ClientIDs     []string     `json:"client_ids,omitempty"`
+	ClientIDs     []string     `json:"-"`
 	SampledAtMs   int64        `json:"sampled_at_ms"`
 	Mode          string       `json:"mode"`
 	GpuCount      int          `json:"gpu_count"`
