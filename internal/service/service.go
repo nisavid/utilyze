@@ -162,7 +162,13 @@ func (s *Service) handleLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{
+			"localhost:*",
+			"127.0.0.1:*",
+			"[::1]:*",
+		},
+	})
 	if err != nil {
 		return
 	}

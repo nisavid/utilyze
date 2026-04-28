@@ -137,7 +137,10 @@ add_install_dir_to_path() {
   profile="$(shell_profile)" || return 1
   quoted_install_dir="$(shell_quote "$INSTALL_DIR")"
 
-  if [ -f "$profile" ] && grep -F "$INSTALL_DIR" "$profile" >/dev/null 2>&1; then
+  if [ -f "$profile" ] && awk -v dir="$INSTALL_DIR" '
+    /^[[:space:]]*(export[[:space:]]+)?PATH=/ && index($0, dir) { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$profile"; then
     PATH="${INSTALL_DIR}:${PATH:-}"
     export PATH
     echo "${INSTALL_DIR} is already configured in ${profile}."

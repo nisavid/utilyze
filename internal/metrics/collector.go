@@ -127,17 +127,21 @@ func (c *Collector) Start(ctx context.Context, metrics chan MetricsSnapshot) {
 				}
 
 				bandwidthSnapshot, err := c.nv.PollBandwidth(deviceID, pollTime)
-				if err == nil &&
-					bandwidthSnapshot.PCIeTxBps != nil &&
-					bandwidthSnapshot.PCIeRxBps != nil &&
-					bandwidthSnapshot.NVLinkTxBps != nil &&
-					bandwidthSnapshot.NVLinkRxBps != nil {
-					gpu.Bandwidth.PCIeTxBps = *bandwidthSnapshot.PCIeTxBps
-					gpu.Bandwidth.PCIeRxBps = *bandwidthSnapshot.PCIeRxBps
-					gpu.Bandwidth.NVLinkTxBps = *bandwidthSnapshot.NVLinkTxBps
-					gpu.Bandwidth.NVLinkRxBps = *bandwidthSnapshot.NVLinkRxBps
-					gpu.Bandwidth.Valid = true
-					hasData = true
+				if err == nil {
+					hasPCIe := bandwidthSnapshot.PCIeTxBps != nil && bandwidthSnapshot.PCIeRxBps != nil
+					hasNVLink := bandwidthSnapshot.NVLinkTxBps != nil && bandwidthSnapshot.NVLinkRxBps != nil
+					if hasPCIe {
+						gpu.Bandwidth.PCIeTxBps = *bandwidthSnapshot.PCIeTxBps
+						gpu.Bandwidth.PCIeRxBps = *bandwidthSnapshot.PCIeRxBps
+					}
+					if hasNVLink {
+						gpu.Bandwidth.NVLinkTxBps = *bandwidthSnapshot.NVLinkTxBps
+						gpu.Bandwidth.NVLinkRxBps = *bandwidthSnapshot.NVLinkRxBps
+					}
+					if hasPCIe || hasNVLink {
+						gpu.Bandwidth.Valid = true
+						hasData = true
+					}
 				}
 
 				if hasData {
