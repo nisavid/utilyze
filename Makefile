@@ -38,7 +38,9 @@ DOCKERFILE ?= docker/Dockerfile
 DOCKER_PLATFORM ?= linux/$(ARCH)
 UTLZ_DEPS :=
 ifeq ($(GOOS),linux)
+ifeq ($(GOARCH),$(ARCH))
     UTLZ_DEPS += $(TARGET)
+endif
 endif
 
 NATIVE_INCLUDE = native/include
@@ -186,10 +188,15 @@ dist-tarball-docker: | check-native-platform
 
 utlz: $(UTLZ_DEPS)
 	@mkdir -p dist $(dir $(EMBEDDED_SAMPLER))
-	@if [ -f "$(TARGET)" ]; then \
+	@if [ "$(GOOS)" = "linux" ] && [ "$(GOARCH)" != "$(ARCH)" ]; then \
+		rm -f "$(EMBEDDED_SAMPLER)"; \
+		echo "error: GOOS=$(GOOS) GOARCH=$(GOARCH) cannot embed host native sampler for ARCH=$(ARCH)"; \
+		exit 1; \
+	elif [ "$(GOOS)" = "linux" ] && [ -f "$(TARGET)" ]; then \
 		cp "$(TARGET)" "$(EMBEDDED_SAMPLER)"; \
 	else \
-		echo "warning: $(TARGET) not found; skipping native sampler embed.  Run 'make native' to build the native sampler if you are on linux amd64/arm64."; \
+		rm -f "$(EMBEDDED_SAMPLER)"; \
+		echo "warning: skipping native sampler embed for GOOS=$(GOOS) GOARCH=$(GOARCH)."; \
 	fi
 	go build \
 		-trimpath \

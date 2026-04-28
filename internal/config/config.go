@@ -28,7 +28,7 @@ func configPath() (string, error) {
 
 func defaultConfig() Config {
 	return Config{
-		ClientID: fallbackRandomID(),
+		ClientID: generateClientID(nil),
 	}
 }
 
@@ -97,7 +97,7 @@ func Load() Config {
 		if c.ClientID != "" {
 			return c
 		}
-		c.ClientID = fallbackRandomID()
+		c.ClientID = generateClientID(nil)
 		if err := c.Save(); err != nil {
 			slog.Debug("could not save config defaults; ignoring", "path", path, "err", err)
 		}
