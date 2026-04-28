@@ -48,7 +48,7 @@ func TestPlainLines_NotchClampSkipsTinyCanvas(t *testing.T) {
 }
 
 func TestPlainLines_TickRowMatchesMapY(t *testing.T) {
-	m := &Model{canvasH: 5, PlainLines: true}
+	m := &Model{canvasH: 5}
 	g := newLineGrid(1, 5)
 	for _, pct := range []float64{0.0, 0.1, 0.15, 0.25, 0.33, 0.5, 0.67, 0.85, 1.0} {
 		if got, want := m.tickRow(pct), g.mapY(pct); got != want {
