@@ -67,22 +67,36 @@ function Test-DirectoryOnPath {
 function Add-DirectoryToUserPath {
     param([string]$Directory)
 
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $entries = @()
-    if ($userPath) {
-        $entries = $userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    }
-
     $normalizedDirectory = Resolve-PathEntry $Directory
-    foreach ($entry in $entries) {
-        $normalizedEntry = Resolve-PathEntry $entry
-        if ($normalizedEntry -and [string]::Equals($normalizedEntry, $normalizedDirectory, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $entries = @()
+        if ($userPath) {
+            $entries = $userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         }
+
+        foreach ($entry in $entries) {
+            $normalizedEntry = Resolve-PathEntry $entry
+            if ($normalizedEntry -and [string]::Equals($normalizedEntry, $normalizedDirectory, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return
+            }
+        }
+
+        $entries += $Directory
+        [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
+
+        $updatedPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        foreach ($entry in ($updatedPath -split ';')) {
+            $normalizedEntry = Resolve-PathEntry $entry
+            if ($normalizedEntry -and [string]::Equals($normalizedEntry, $normalizedDirectory, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return
+            }
+        }
+
+        Start-Sleep -Milliseconds 100
     }
 
-    $entries += $Directory
-    [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
+    throw "Could not add $Directory to the user PATH."
 }
 
 function Add-DirectoryToProcessPath {
