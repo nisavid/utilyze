@@ -4,6 +4,17 @@ $BinName = 'utlz'
 $AltBinName = 'utilyze'
 $Version = if ($env:UTLZ_VERSION) { $env:UTLZ_VERSION } else { 'latest' }
 
+function Resolve-PathEntry {
+    param([string]$PathEntry)
+
+    try {
+        $expandedPath = [Environment]::ExpandEnvironmentVariables($PathEntry.Trim('"'))
+        return [System.IO.Path]::GetFullPath($expandedPath).TrimEnd('\', '/')
+    } catch {
+        return $null
+    }
+}
+
 if ($env:UTLZ_INSTALL_DIR) {
     $InstallDir = $env:UTLZ_INSTALL_DIR
 } elseif ($env:LOCALAPPDATA) {
@@ -12,6 +23,11 @@ if ($env:UTLZ_INSTALL_DIR) {
     $InstallDir = Join-Path $env:USERPROFILE '.utilyze\bin'
 } else {
     throw "LOCALAPPDATA and USERPROFILE are not set. Set UTLZ_INSTALL_DIR to the directory you want to install $BinName to."
+}
+
+$InstallDir = Resolve-PathEntry $InstallDir
+if (-not $InstallDir) {
+    throw "Invalid install directory. Set UTLZ_INSTALL_DIR to the directory you want to install $BinName to."
 }
 
 $ProcessorArch = if ($env:PROCESSOR_ARCHITEW6432) {
@@ -24,17 +40,6 @@ switch ($ProcessorArch) {
     'AMD64' { $Arch = 'amd64' }
     'ARM64' { $Arch = 'arm64' }
     default { throw "Unsupported architecture: $ProcessorArch" }
-}
-
-function Resolve-PathEntry {
-    param([string]$PathEntry)
-
-    try {
-        $expandedPath = [Environment]::ExpandEnvironmentVariables($PathEntry.Trim('"'))
-        return [System.IO.Path]::GetFullPath($expandedPath).TrimEnd('\', '/')
-    } catch {
-        return $null
-    }
 }
 
 function Test-DirectoryOnPath {
