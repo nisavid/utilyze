@@ -129,6 +129,7 @@ try {
             $InstalledVersion = ($VersionOutput | Select-Object -First 1)
         }
     } catch {
+        Write-Verbose "Could not determine installed version: $_"
     }
 
     Write-Host "Installed $BinName and $AltBinName to $InstallDir ($InstalledVersion)"

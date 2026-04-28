@@ -58,6 +58,7 @@ func GenerateGpuID(gpuUUID string) string {
 }
 
 func readMachineID() (string, error) {
+	// /etc/machine-id is Linux-only; other platforms fall back to GPU or random IDs.
 	data, err := os.ReadFile("/etc/machine-id")
 	if err != nil {
 		return "", err

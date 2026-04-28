@@ -42,6 +42,7 @@ const (
 
 	serviceModeEnv = "UTLZ_SERVICE_MODE"
 	serviceAddrEnv = "UTLZ_SERVICE_ADDR"
+	serviceHostEnv = "UTLZ_SERVICE_HOST"
 
 	serviceModeAuto   = "auto"
 	serviceModeServer = "server"
@@ -63,6 +64,7 @@ func main() {
 	var logLevel string
 
 	var serviceAddr string
+	var serviceHost string
 	var serviceMode string
 	var servicePort string
 
@@ -72,6 +74,7 @@ func main() {
 
 	flag.StringVar(&serviceAddr, "connect", os.Getenv(serviceAddrEnv), "address to connect to for remote metrics over websocket")
 	flag.StringVar(&serviceAddr, "c", os.Getenv(serviceAddrEnv), "address to connect to for remote metrics over websocket")
+	flag.StringVar(&serviceHost, "host", defaultServiceHost(), "host/interface to listen on for server mode")
 	flag.StringVar(&serviceMode, "mode", defaultServiceMode(), "service mode to run in (auto, server, client)")
 	flag.StringVar(&servicePort, "port", "8079", "port to listen on for server mode")
 
@@ -120,7 +123,7 @@ func main() {
 	runCfg := runConfig{
 		mode:        serviceMode,
 		connectAddr: serviceAddress(serviceAddr, servicePort),
-		listenAddr:  serviceAddress("", servicePort),
+		listenAddr:  listenAddress(serviceHost, servicePort),
 		config:      config.Load(),
 	}
 	if err := run(context.Background(), deviceIds, runCfg); err != nil {
@@ -213,15 +216,30 @@ func defaultServiceMode() string {
 	return serviceModeAuto
 }
 
+func defaultServiceHost() string {
+	if host := strings.TrimSpace(os.Getenv(serviceHostEnv)); host != "" {
+		return host
+	}
+	return service.DefaultHost
+}
+
 func serviceAddress(addr string, port string) string {
 	if strings.TrimSpace(addr) != "" {
 		return addr
+	}
+	return listenAddress(service.DefaultHost, port)
+}
+
+func listenAddress(host string, port string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = service.DefaultHost
 	}
 	port = strings.TrimSpace(port)
 	if port == "" {
 		port = service.DefaultPort
 	}
-	return service.DefaultHost + ":" + port
+	return host + ":" + port
 }
 
 func ensureCanCollectMetrics() (bool, error) {
