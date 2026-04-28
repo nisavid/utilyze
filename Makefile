@@ -36,6 +36,10 @@ CUDA_RUNTIME_LIB_PATH := $(CUDA_LIB):$(CUDA_CUPTI_LIB)
 DOCKER ?= docker
 DOCKERFILE ?= docker/Dockerfile
 DOCKER_PLATFORM ?= linux/$(ARCH)
+UTLZ_DEPS :=
+ifeq ($(GOOS),linux)
+    UTLZ_DEPS += $(TARGET)
+endif
 
 NATIVE_INCLUDE = native/include
 NATIVE_SRC = native/src
@@ -180,7 +184,7 @@ dist-tarball-docker: | check-native-platform
 
 -include $(DEPS)
 
-utlz:
+utlz: $(UTLZ_DEPS)
 	@mkdir -p dist $(dir $(EMBEDDED_SAMPLER))
 	@if [ -f "$(TARGET)" ]; then \
 		cp "$(TARGET)" "$(EMBEDDED_SAMPLER)"; \
