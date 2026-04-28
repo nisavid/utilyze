@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -246,7 +247,7 @@ func listenAddress(host string, port string) string {
 	if port == "" {
 		port = service.DefaultPort
 	}
-	return host + ":" + port
+	return net.JoinHostPort(host, port)
 }
 
 func ensureCanCollectMetrics() (bool, error) {
