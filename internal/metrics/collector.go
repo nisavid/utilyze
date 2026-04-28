@@ -62,6 +62,8 @@ type BandwidthSnapshot struct {
 	PCIeRxBps   float64
 	NVLinkTxBps float64
 	NVLinkRxBps float64
+	PCIeValid   bool
+	NVLinkValid bool
 	Valid       bool
 }
 
@@ -133,10 +135,12 @@ func (c *Collector) Start(ctx context.Context, metrics chan MetricsSnapshot) {
 					if hasPCIe {
 						gpu.Bandwidth.PCIeTxBps = *bandwidthSnapshot.PCIeTxBps
 						gpu.Bandwidth.PCIeRxBps = *bandwidthSnapshot.PCIeRxBps
+						gpu.Bandwidth.PCIeValid = true
 					}
 					if hasNVLink {
 						gpu.Bandwidth.NVLinkTxBps = *bandwidthSnapshot.NVLinkTxBps
 						gpu.Bandwidth.NVLinkRxBps = *bandwidthSnapshot.NVLinkRxBps
+						gpu.Bandwidth.NVLinkValid = true
 					}
 					if hasPCIe || hasNVLink {
 						gpu.Bandwidth.Valid = true

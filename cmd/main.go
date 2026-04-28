@@ -19,6 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/systalyze/utilyze/internal/config"
+	"github.com/systalyze/utilyze/internal/ffi"
 	"github.com/systalyze/utilyze/internal/ffi/cupti"
 	"github.com/systalyze/utilyze/internal/ffi/nvml"
 	"github.com/systalyze/utilyze/internal/ffi/sampler"
@@ -193,7 +194,13 @@ func run(ctx context.Context, deviceIds []int, runCfg runConfig) error {
 		if service.ServerAvailable(ctx, runCfg.connectAddr, runCfg.config.ClientID) {
 			return runClient(ctx, runCfg.connectAddr, runCfg.config.ClientID)
 		}
-		return runLocal(ctx, deviceIds, runCfg.listenAddr, runCfg.config.ClientID)
+		if err := runLocal(ctx, deviceIds, runCfg.listenAddr, runCfg.config.ClientID); err != nil {
+			if errors.Is(err, ffi.ErrUnsupportedPlatform) {
+				return runClient(ctx, runCfg.connectAddr, runCfg.config.ClientID)
+			}
+			return err
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown service mode %q", mode)
 	}
