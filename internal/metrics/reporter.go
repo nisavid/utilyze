@@ -157,7 +157,7 @@ func (r *Reporter) tick(ctx context.Context) {
 		computeSum, memorySum                          float64
 		solCount                                       int
 		pcieTxSum, pcieRxSum, nvlinkTxSum, nvlinkRxSum float64
-		bwCount                                        int
+		pcieCount, nvlinkCount                         int
 	}
 	byID := make(map[int]*agg)
 	for _, snap := range window {
@@ -172,12 +172,15 @@ func (r *Reporter) tick(ctx context.Context) {
 				a.memorySum += gpu.SOL.MemoryPct
 				a.solCount++
 			}
-			if gpu.Bandwidth.Valid {
+			if gpu.Bandwidth.PCIeValid {
 				a.pcieTxSum += gpu.Bandwidth.PCIeTxBps
 				a.pcieRxSum += gpu.Bandwidth.PCIeRxBps
+				a.pcieCount++
+			}
+			if gpu.Bandwidth.NVLinkValid {
 				a.nvlinkTxSum += gpu.Bandwidth.NVLinkTxBps
 				a.nvlinkRxSum += gpu.Bandwidth.NVLinkRxBps
-				a.bwCount++
+				a.nvlinkCount++
 			}
 		}
 	}
@@ -199,9 +202,11 @@ func (r *Reporter) tick(ctx context.Context) {
 				computePct = a.computeSum / float64(a.solCount)
 				memoryPct = a.memorySum / float64(a.solCount)
 			}
-			if a.bwCount > 0 {
-				pcieGBs = (a.pcieTxSum + a.pcieRxSum) / float64(a.bwCount) / 1e9
-				nvlinkGBs = (a.nvlinkTxSum + a.nvlinkRxSum) / float64(a.bwCount) / 1e9
+			if a.pcieCount > 0 {
+				pcieGBs = (a.pcieTxSum + a.pcieRxSum) / float64(a.pcieCount) / 1e9
+			}
+			if a.nvlinkCount > 0 {
+				nvlinkGBs = (a.nvlinkTxSum + a.nvlinkRxSum) / float64(a.nvlinkCount) / 1e9
 			}
 		}
 
