@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -91,31 +92,45 @@ func Load() Config {
 		return Config{ClientID: generateClientID(nil)}
 	}
 
-	cfgBytes, err := os.ReadFile(path)
+	c, err := loadConfig(path)
 	if err == nil {
-		var c Config
-		err := json.Unmarshal(cfgBytes, &c)
-		if err == nil && c.ClientID != "" {
+		if c.ClientID != "" {
 			return c
 		}
-		if err == nil {
-			c.ClientID = fallbackRandomID()
-			if err := c.Save(); err != nil {
-				slog.Debug("could not save config defaults; ignoring", "path", path, "err", err)
-			}
-			return c
+		c.ClientID = fallbackRandomID()
+		if err := c.Save(); err != nil {
+			slog.Debug("could not save config defaults; ignoring", "path", path, "err", err)
 		}
-		slog.Debug("config parse failed; using default", "path", path, "err", err)
-	} else {
+		return c
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		slog.Debug("config read failed; using default", "path", path, "err", err)
 	}
 
-	c := defaultConfig()
-	if err := c.Save(); err != nil {
+	c = defaultConfig()
+	if err := c.saveExclusive(path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			if persisted, readErr := loadConfig(path); readErr == nil && persisted.ClientID != "" {
+				return persisted
+			}
+		}
 		slog.Debug("could not save config; using fallback identity", "path", path, "err", err)
 		return Config{ClientID: generateClientID(nil)}
 	}
 	return c
+}
+
+func loadConfig(path string) (Config, error) {
+	cfgBytes, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var c Config
+	if err := json.Unmarshal(cfgBytes, &c); err != nil {
+		return Config{}, err
+	}
+	return c, nil
 }
 
 func (c Config) Save() error {
@@ -123,6 +138,14 @@ func (c Config) Save() error {
 	if err != nil {
 		return err
 	}
+	return c.saveTo(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+}
+
+func (c Config) saveExclusive(path string) error {
+	return c.saveTo(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+}
+
+func (c Config) saveTo(path string, flag int) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -130,5 +153,11 @@ func (c Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(cfgBytes, '\n'), 0600)
+	f, err := os.OpenFile(path, flag, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(append(cfgBytes, '\n'))
+	return err
 }

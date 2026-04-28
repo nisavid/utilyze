@@ -30,7 +30,8 @@ function Resolve-PathEntry {
     param([string]$PathEntry)
 
     try {
-        return [System.IO.Path]::GetFullPath($PathEntry.Trim('"')).TrimEnd('\', '/')
+        $expandedPath = [Environment]::ExpandEnvironmentVariables($PathEntry.Trim('"'))
+        return [System.IO.Path]::GetFullPath($expandedPath).TrimEnd('\', '/')
     } catch {
         return $null
     }
@@ -112,11 +113,19 @@ try {
     $InvokeWebRequestParams = @{
         Uri = $Url
         OutFile = $DownloadedBinary
+        TimeoutSec = 60
     }
     if ($PSVersionTable.PSVersion.Major -lt 6) {
         $InvokeWebRequestParams.UseBasicParsing = $true
     }
     Invoke-WebRequest @InvokeWebRequestParams
+
+    if ($env:UTLZ_SHA256) {
+        $actualSha256 = (Get-FileHash -LiteralPath $DownloadedBinary -Algorithm SHA256).Hash
+        if (-not [string]::Equals($actualSha256, $env:UTLZ_SHA256, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Checksum mismatch for $AssetName"
+        }
+    }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Copy-Item -LiteralPath $DownloadedBinary -Destination $InstalledBinary -Force
