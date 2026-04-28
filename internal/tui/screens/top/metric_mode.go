@@ -16,9 +16,9 @@ const (
 type metricsMode int
 
 const (
-	MetricsModeSOL        metricsMode = iota
-	MetricsModeGRActive   metricsMode = iota
-	MetricsModeSMActivity metricsMode = iota
+	MetricsModeSOL metricsMode = iota
+	MetricsModeGRActive
+	MetricsModeSMActivity
 )
 
 type metricsSeriesDef struct {

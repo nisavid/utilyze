@@ -78,6 +78,9 @@ func (r *Reporter) Start(ctx context.Context) {
 	ctx, r.cancelFunc = context.WithCancel(ctx)
 
 	jitterMs := hashToInt(r.config.ClientID) % 5000
+	if r.config.ClientID == "" {
+		jitterMs = int(time.Now().UnixNano() % 5000)
+	}
 	select {
 	case <-ctx.Done():
 		return

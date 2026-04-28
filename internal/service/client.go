@@ -49,7 +49,7 @@ func ServerAvailable(ctx context.Context, addr string, clientID string) bool {
 	if err != nil {
 		return false
 	}
-	conn.CloseNow()
+	_ = conn.Close(websocket.StatusNormalClosure, "probe")
 	return true
 }
 

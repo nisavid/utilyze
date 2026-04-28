@@ -56,6 +56,7 @@ sudo utlz --endpoints
 This starts a WebSocket server that listens for connections from other Utilyze processes on port 8079 by default. Further instances will automatically connect to the same server.
 
 On a macOS/Windows machine, you can connect to a running server with:
+
 ```bash
 utlz --connect <SERVER_URL>
 ```

@@ -254,8 +254,12 @@ func ensureCanCollectMetrics() (bool, error) {
 }
 
 func runServer(ctx context.Context, deviceIds []int, addr string, clientID string) error {
-	if _, err := ensureCanCollectMetrics(); err != nil {
+	ok, err := ensureCanCollectMetrics()
+	if err != nil {
 		return err
+	}
+	if !ok {
+		return fmt.Errorf("profiling capabilities are not enabled")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -296,12 +300,16 @@ func runServer(ctx context.Context, deviceIds []int, addr string, clientID strin
 }
 
 func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string) error {
-	if _, err := ensureCanCollectMetrics(); err != nil {
+	ok, err := ensureCanCollectMetrics()
+	if err != nil {
 		return err
+	}
+	if !ok {
+		return fmt.Errorf("profiling capabilities are not enabled")
 	}
 
 	svc := service.NewService()
-	return runTUI(ctx, "", func(ctx context.Context, p *tea.Program) error {
+	return runTUI(ctx, service.LiveURL(addr), func(ctx context.Context, p *tea.Program) error {
 		collector, err := metrics.NewCollector(deviceIds, metricsInterval)
 		if err != nil {
 			return err
@@ -338,7 +346,7 @@ func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string
 }
 
 func runClient(ctx context.Context, addr string, clientID string) error {
-	return runTUI(ctx, "", func(ctx context.Context, p *tea.Program) error {
+	return runTUI(ctx, service.LiveURL(addr), func(ctx context.Context, p *tea.Program) error {
 		// when the server abruptly closes the connection, the JSON parse fails with an invalid frame payload data error
 		err := service.Stream(ctx, addr, clientID, func(event service.Event) error {
 			handleServiceEvent(p, event)
@@ -438,8 +446,11 @@ func newMetricsReporter(
 	onCeiling func(perGPU map[int]metrics.GpuCeiling),
 ) (*metrics.Reporter, error) {
 	totalGpuCount, err := nvmlClient.GetDeviceCount()
-	if err != nil || totalGpuCount <= 0 {
+	if err != nil {
 		return nil, fmt.Errorf("could not query GPU count: %w", err)
+	}
+	if totalGpuCount <= 0 {
+		return nil, fmt.Errorf("no GPUs detected: device count returned %d", totalGpuCount)
 	}
 
 	allNames := make([]string, totalGpuCount)

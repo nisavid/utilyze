@@ -70,6 +70,6 @@ func (m *Model) SetStyles(borderStyle, axisStyle, panelStyle lipgloss.Style) {
 
 func WithDetailMode(enabled bool) Option {
 	return func(m *Model) {
-		m.DetailMode = enabled
+		m.SetDetailMode(enabled)
 	}
 }

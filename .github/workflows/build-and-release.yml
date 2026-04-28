@@ -101,10 +101,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { goos: darwin, goarch: amd64, ext: '' }
-          - { goos: darwin, goarch: arm64, ext: '' }
-          - { goos: windows, goarch: amd64, ext: '.exe' }
-          - { goos: windows, goarch: arm64, ext: '.exe' }
+          - {goos: darwin, goarch: amd64, ext: ''}
+          - {goos: darwin, goarch: arm64, ext: ''}
+          - {goos: windows, goarch: amd64, ext: '.exe'}
+          - {goos: windows, goarch: arm64, ext: '.exe'}
     steps:
       - uses: actions/checkout@v6
 
@@ -161,12 +161,38 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           path: dist/
-          pattern: '{libutlz_sampler-*,utlz-linux-*,utlz-darwin-*,utlz-windows-*}'
+          pattern: libutlz_sampler-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist/
+          pattern: utlz-linux-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist/
+          pattern: utlz-darwin-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist/
+          pattern: utlz-windows-*
           merge-multiple: true
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum libutlz_sampler-*.tar.gz utlz-linux-* utlz-darwin-* utlz-windows-* > sha256sums.txt
+        shell: bash
+        run: |
+          shopt -s nullglob
+          artifacts=(libutlz_sampler-*.tar.gz utlz-linux-* utlz-darwin-* utlz-windows-*)
+          if ((${#artifacts[@]} == 0)); then
+            echo "ERROR: no artifacts found for checksum generation" >&2
+            exit 1
+          fi
+          sha256sum "${artifacts[@]}" > sha256sums.txt
 
       - name: Create GitHub Release
         env:

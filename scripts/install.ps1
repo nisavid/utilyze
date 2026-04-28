@@ -26,7 +26,7 @@ switch ($ProcessorArch) {
     default { throw "Unsupported architecture: $ProcessorArch" }
 }
 
-function Normalize-PathEntry {
+function Resolve-PathEntry {
     param([string]$PathEntry)
 
     try {
@@ -39,7 +39,7 @@ function Normalize-PathEntry {
 function Test-DirectoryOnPath {
     param([string]$Directory)
 
-    $normalizedDirectory = Normalize-PathEntry $Directory
+    $normalizedDirectory = Resolve-PathEntry $Directory
     if (-not $normalizedDirectory) {
         return $false
     }
@@ -49,7 +49,7 @@ function Test-DirectoryOnPath {
             continue
         }
 
-        $normalizedEntry = Normalize-PathEntry $entry
+        $normalizedEntry = Resolve-PathEntry $entry
         if ($normalizedEntry -and [string]::Equals($normalizedEntry, $normalizedDirectory, [System.StringComparison]::OrdinalIgnoreCase)) {
             return $true
         }
@@ -67,9 +67,9 @@ function Add-DirectoryToUserPath {
         $entries = $userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     }
 
-    $normalizedDirectory = Normalize-PathEntry $Directory
+    $normalizedDirectory = Resolve-PathEntry $Directory
     foreach ($entry in $entries) {
-        $normalizedEntry = Normalize-PathEntry $entry
+        $normalizedEntry = Resolve-PathEntry $entry
         if ($normalizedEntry -and [string]::Equals($normalizedEntry, $normalizedDirectory, [System.StringComparison]::OrdinalIgnoreCase)) {
             return
         }
@@ -107,8 +107,16 @@ try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     } catch {
         # best effort for older Windows PowerShell defaults.
+        Write-Verbose "Could not set TLS 1.2: $_"
     }
-    Invoke-WebRequest -Uri $Url -OutFile $DownloadedBinary -UseBasicParsing
+    $InvokeWebRequestParams = @{
+        Uri = $Url
+        OutFile = $DownloadedBinary
+    }
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        $InvokeWebRequestParams.UseBasicParsing = $true
+    }
+    Invoke-WebRequest @InvokeWebRequestParams
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Copy-Item -LiteralPath $DownloadedBinary -Destination $InstalledBinary -Force

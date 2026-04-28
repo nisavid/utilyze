@@ -13,7 +13,7 @@ SONAME := $(LIB_NAME).so.$(VERSION_MAJOR)
 TARGET := dist/$(LIB_NAME).so.$(VERSION)
 EMBEDDED_SAMPLER := internal/ffi/sampler/embedded/libutlz_sampler.so.$(VERSION_MAJOR)
 GOOS ?= $(shell go env GOOS 2>/dev/null || echo $(OS))
-GOARCH ?= $(shell go env GOARCH 2>/dev/null)
+GOARCH ?= $(shell go env GOARCH 2>/dev/null || echo $(ARCH))
 
 ifeq ($(PLATFORM), x86_64)
     CUDA_TARGET ?= x86_64-linux

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -26,7 +27,7 @@ func configPath() (string, error) {
 
 func defaultConfig() Config {
 	return Config{
-		ClientID: randomID(),
+		ClientID: fallbackRandomID(),
 	}
 }
 
@@ -35,10 +36,21 @@ func sha256Hex(input string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func randomID() string {
+func randomID() (string, error) {
 	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+func fallbackRandomID() string {
+	id, err := randomID()
+	if err == nil {
+		return id
+	}
+	slog.Debug("could not read random bytes; using time-based fallback identity", "err", err)
+	return sha256Hex("rand-fallback:" + time.Now().UTC().Format(time.RFC3339Nano))[:32]
 }
 
 func GenerateGpuID(gpuUUID string) string {
@@ -68,7 +80,7 @@ func generateClientID(gpuUUIDs []string) string {
 		return sha256Hex("gpus:" + strings.Join(sorted, "|"))[:24]
 	}
 
-	return sha256Hex("rand:" + randomID())[:24]
+	return sha256Hex("rand:" + fallbackRandomID())[:24]
 }
 
 func Load() Config {
@@ -86,7 +98,7 @@ func Load() Config {
 			return c
 		}
 		if err == nil {
-			c.ClientID = randomID()
+			c.ClientID = fallbackRandomID()
 			if err := c.Save(); err != nil {
 				slog.Debug("could not save config defaults; ignoring", "path", path, "err", err)
 			}
