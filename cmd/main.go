@@ -246,7 +246,11 @@ func ensureCanCollectMetrics() (bool, error) {
 	if err := cupti.EnsureLoaded(); err != nil {
 		return false, err
 	}
-	if hasCaps, _ := sampler.HasProfilingCapabilities(); hasCaps || os.Getenv("UTLZ_DISABLE_PROFILING_WARNING") == "1" {
+	hasCaps, err := sampler.HasProfilingCapabilities()
+	if err != nil {
+		return false, fmt.Errorf("could not determine profiling capabilities: %w", err)
+	}
+	if hasCaps || os.Getenv("UTLZ_DISABLE_PROFILING_WARNING") == "1" {
 		return true, nil
 	}
 
@@ -474,7 +478,10 @@ func newMetricsReporter(
 	allNames := make([]string, totalGpuCount)
 	gpuIDs := make([]string, totalGpuCount)
 	for i := 0; i < totalGpuCount; i++ {
-		uuid, _ := nvmlClient.GetDeviceUUID(i)
+		uuid, err := nvmlClient.GetDeviceUUID(i)
+		if err != nil {
+			return nil, fmt.Errorf("could not query UUID for GPU %d: %w", i, err)
+		}
 		allNames[i], _ = nvmlClient.GetDeviceName(i)
 		gpuIDs[i] = config.GenerateGpuID(uuid)
 	}
