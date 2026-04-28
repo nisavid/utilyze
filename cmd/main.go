@@ -301,7 +301,7 @@ func runServer(ctx context.Context, deviceIds []int, addr string, clientID strin
 		svc.BroadcastCeilings(perGPU)
 	})
 	if err != nil {
-		return err
+		slog.Debug("could not start metrics reporter; continuing without reporting", "err", err)
 	}
 	if reporter != nil {
 		go reporter.Start(ctx)
@@ -339,7 +339,7 @@ func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string
 			p.Send(top.RooflineCeilingMsg{PerGPU: convertCeilings(perGPU)})
 		})
 		if err != nil {
-			return err
+			slog.Debug("could not start metrics reporter; continuing without reporting", "err", err)
 		}
 		if reporter != nil {
 			go reporter.Start(ctx)
