@@ -352,7 +352,7 @@ func runLocal(ctx context.Context, deviceIds []int, addr string, clientID string
 
 		go func() {
 			if err := svc.Run(ctx, addr); err != nil && ctx.Err() == nil {
-				p.Send(top.ErrorMsg{Error: err})
+				slog.Debug("could not start local metrics sharing service; continuing local monitoring", "addr", addr, "err", err)
 			}
 		}()
 
