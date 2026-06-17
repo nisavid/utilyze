@@ -40,6 +40,8 @@ Utilyze will likely require root for profiling capabilities depending on your ho
 
 If CUPTI 12+ is not found, `utlz` will prompt you to install the latest release from PyPI on first run.
 
+For machines without internet access (e.g., airgapped machines), see [docs/offline-install.md](docs/offline-install.md).
+
 ## Usage
 
 On a Linux machine with profiling capabilities, you can:
