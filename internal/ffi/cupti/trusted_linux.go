@@ -19,6 +19,8 @@ import (
 // occurrences when execve supplies duplicate environment keys.
 var _, initialLibraryPathSet = os.LookupEnv("LD_LIBRARY_PATH")
 
+// requiresTrustedLibraries inspects credentials and capabilities to choose the
+// loading policy, returning an error if capabilities cannot be inspected.
 func requiresTrustedLibraries() (bool, error) {
 	hdr := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
 	data := [2]unix.CapUserData{}
@@ -30,6 +32,8 @@ func requiresTrustedLibraries() (bool, error) {
 	return isPrivileged(uid, euid, suid, gid, egid, sgid, data), nil
 }
 
+// isPrivileged reports whether root IDs, differing credential IDs, or effective,
+// permitted, or inheritable capabilities require trusted library loading.
 func isPrivileged(uid, euid, suid, gid, egid, sgid int, data [2]unix.CapUserData) bool {
 	if uid == 0 || euid == 0 || suid == 0 || uid != euid || uid != suid || gid != egid || gid != sgid {
 		return true
@@ -44,6 +48,8 @@ func isPrivileged(uid, euid, suid, gid, egid, sgid int, data [2]unix.CapUserData
 	return false
 }
 
+// libraryPaths prepares the entire library pair without executing native code.
+// Restricted loads reject startup LD_LIBRARY_PATH and require trusted absolute paths.
 func libraryPaths(dir string, restricted bool) ([]string, error) {
 	if restricted {
 		if initialLibraryPathSet {
@@ -68,6 +74,9 @@ func libraryPaths(dir string, restricted bool) ([]string, error) {
 	return paths, nil
 }
 
+// trustedLibraryPath resolves an absolute path to a regular file whose resolved
+// components are root-owned and not group- or world-writable. It rejects linker
+// tokens and returns the canonical name to use when loading.
 func trustedLibraryPath(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("CUPTI library path must be absolute: %s", path)

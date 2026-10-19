@@ -28,6 +28,7 @@ var requiredLibs = []string{hostLibName, targetLibName}
 var loadOnce sync.Once
 var loadErr error
 
+// EnsureLoaded loads the CUPTI library pair once and retains the first result.
 func EnsureLoaded() error {
 	loadOnce.Do(func() {
 		loadErr = load()
@@ -35,6 +36,7 @@ func EnsureLoaded() error {
 	return loadErr
 }
 
+// cacheDir returns the utlz directory under the current user's OS cache directory.
 func cacheDir() (string, error) {
 	userCacheDir, err := os.UserCacheDir()
 	if err != nil {
@@ -43,6 +45,8 @@ func cacheDir() (string, error) {
 	return filepath.Join(userCacheDir, "utlz"), nil
 }
 
+// load discovers CUPTI according to the process's privileges. Only unprivileged
+// runs may use user packages, caches, or an approved download.
 func load() error {
 	restricted, err := requiresTrustedLibraries()
 	if err != nil {
@@ -111,6 +115,7 @@ func load() error {
 	return nil
 }
 
+// loadFromDirs tries directories in order, returning an error if none loads a pair.
 func loadFromDirs(dirs []string) error {
 	if len(dirs) == 0 {
 		return errors.New("no CUPTI library directories found")
@@ -126,6 +131,8 @@ func loadFromDirs(dirs []string) error {
 	return err
 }
 
+// loadFromDir checks current privileges before loading a library pair from dir.
+// An empty dir uses the dynamic linker's search path only when unprivileged.
 func loadFromDir(dir string) (err error) {
 	restricted, err := requiresTrustedLibraries()
 	if err != nil {
@@ -134,6 +141,8 @@ func loadFromDir(dir string) (err error) {
 	return loadFromDirWithPolicy(dir, restricted)
 }
 
+// loadFromDirWithPolicy validates both paths before opening either library and
+// probes the host library's required symbol. Restricted loads require trusted paths.
 func loadFromDirWithPolicy(dir string, restricted bool) (err error) {
 	// Resolve and validate the entire pair before opening either library: the
 	// first Dlopen can execute constructors or load the second as a dependency.
@@ -167,6 +176,7 @@ func loadFromDirWithPolicy(dir string, restricted bool) (err error) {
 	return nil
 }
 
+// searchDirs returns system and user Python package candidates for ordinary runs.
 func searchDirs() []string {
 	dirs := systemSearchDirs()
 	home, err := os.UserHomeDir()
@@ -176,6 +186,8 @@ func searchDirs() []string {
 	return dirs
 }
 
+// systemSearchDirs returns existing candidates from fixed system path patterns.
+// Each candidate still requires ownership and permission checks before privileged use.
 func systemSearchDirs() []string {
 	return globPaths(
 		"/usr/local/lib/utilyze/cupti",
@@ -197,6 +209,7 @@ func systemSearchDirs() []string {
 	)
 }
 
+// globPaths concatenates matches in pattern order, ignoring invalid patterns.
 func globPaths(patterns ...string) []string {
 	var dirs []string
 	for _, pattern := range patterns {

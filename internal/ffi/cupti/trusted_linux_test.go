@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// TestIsPrivileged covers root and differing IDs plus both capability words.
 func TestIsPrivileged(t *testing.T) {
 	ids := [6]int{1000, 1000, 1000, 1000, 1000, 1000}
 	check := func(ids [6]int, caps [2]unix.CapUserData) bool {
@@ -53,6 +54,8 @@ func TestIsPrivileged(t *testing.T) {
 	}
 }
 
+// TestLibraryPathsRejectRelativeDirectories checks that only ordinary loads may
+// use relative directories or the dynamic linker's default search path.
 func TestLibraryPathsRejectRelativeDirectories(t *testing.T) {
 	initial := initialLibraryPathSet
 	initialLibraryPathSet = false
@@ -67,6 +70,8 @@ func TestLibraryPathsRejectRelativeDirectories(t *testing.T) {
 	}
 }
 
+// TestSystemSearchDirsExcludeUserLocations verifies that environment-controlled
+// user locations affect ordinary discovery but not system candidates.
 func TestSystemSearchDirsExcludeUserLocations(t *testing.T) {
 	want := systemSearchDirs()
 	home := t.TempDir()
@@ -87,6 +92,8 @@ func TestSystemSearchDirsExcludeUserLocations(t *testing.T) {
 	}
 }
 
+// rootTempDir creates a fixture directory with trusted ancestors and automatic
+// cleanup, skipping when root privileges or trusted ancestors are unavailable.
 func rootTempDir(t *testing.T) string {
 	t.Helper()
 	if os.Geteuid() != 0 {
@@ -106,6 +113,8 @@ func rootTempDir(t *testing.T) string {
 	return dir
 }
 
+// TestTrustedLibraryPathRoot checks rejection of unsafe ownership, permissions,
+// file types, symlink targets, and dynamic linker tokens.
 func TestTrustedLibraryPathRoot(t *testing.T) {
 	root := rootTempDir(t)
 	cases := []struct {
@@ -174,6 +183,8 @@ static void mark(char value) {
 }
 `
 
+// buildLibrary compiles a shared fixture with constructor marker support,
+// skipping the test when gcc is unavailable.
 func buildLibrary(t *testing.T, dir, name, source string, linkArgs ...string) {
 	t.Helper()
 	gcc, err := exec.LookPath("gcc")
@@ -188,6 +199,8 @@ func buildLibrary(t *testing.T, dir, name, source string, linkArgs ...string) {
 	}
 }
 
+// buildPair creates host and target fixtures with distinct constructor markers
+// and the host symbol required by the loader's probe.
 func buildPair(t *testing.T, dir string) {
 	t.Helper()
 	buildLibrary(t, dir, hostLibName, `
@@ -199,6 +212,8 @@ __attribute__((constructor)) static void init(void) { mark('T'); }
 `)
 }
 
+// buildRawExecLauncher compiles a launcher that preserves empty and duplicate
+// LD_LIBRARY_PATH entries for startup environment regression tests.
 func buildRawExecLauncher(t *testing.T) string {
 	t.Helper()
 	gcc, err := exec.LookPath("gcc")
@@ -239,6 +254,8 @@ int main(int argc, char **argv) {
 	return path
 }
 
+// runLoader isolates a load attempt in a subprocess and checks constructor markers.
+// An optional raw launcher preserves environment entries that os/exec deduplicates.
 func runLoader(t *testing.T, dir, mode, startupPath string, rawLauncher ...string) string {
 	t.Helper()
 	marker := filepath.Join(t.TempDir(), "constructor-marker")
@@ -277,6 +294,8 @@ func runLoader(t *testing.T, dir, mode, startupPath string, rawLauncher ...strin
 	return string(data)
 }
 
+// TestCUPTILoaderProcess is the subprocess entry point for loading policy tests.
+// It clears LD_LIBRARY_PATH after startup to exercise the retained linker state.
 func TestCUPTILoaderProcess(t *testing.T) {
 	mode := os.Getenv("UTLZ_CUPTI_TEST_MODE")
 	if mode == "" {
@@ -327,6 +346,8 @@ func TestCUPTILoaderProcess(t *testing.T) {
 	}
 }
 
+// TestOrdinaryCUPTILoad verifies that ordinary policy accepts a writable fixture
+// directory while restricted policy rejects it before constructors execute.
 func TestOrdinaryCUPTILoad(t *testing.T) {
 	dir := t.TempDir()
 	buildPair(t, dir)
@@ -337,6 +358,8 @@ func TestOrdinaryCUPTILoad(t *testing.T) {
 	runLoader(t, dir, "reject-policy", "")
 }
 
+// TestPrivilegedCUPTILoadRoot checks trusted symlink loading and verifies that an
+// unsafe second library prevents either library's constructor from executing.
 func TestPrivilegedCUPTILoadRoot(t *testing.T) {
 	root := rootTempDir(t)
 	dir := filepath.Join(root, "installation")
@@ -360,6 +383,8 @@ func TestPrivilegedCUPTILoadRoot(t *testing.T) {
 	runLoader(t, dir, "reject", "")
 }
 
+// TestStartupLibraryPathDependencyRoot verifies that empty, nonempty, and duplicate
+// startup LD_LIBRARY_PATH entries cannot redirect privileged dependency loading.
 func TestStartupLibraryPathDependencyRoot(t *testing.T) {
 	dir, dependencies := rootTempDir(t), t.TempDir()
 	buildPair(t, dir)
