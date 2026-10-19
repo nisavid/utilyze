@@ -16,7 +16,6 @@ const (
 	sym_nvmlDeviceGetFieldValues                = "nvmlDeviceGetFieldValues"
 	sym_nvmlDeviceGetUUID                       = "nvmlDeviceGetUUID"
 	sym_nvmlDeviceGetName                       = "nvmlDeviceGetName"
-	sym_nvmlDeviceGetComputeRunningProcesses_v3 = "nvmlDeviceGetComputeRunningProcesses_v3"
 	sym_nvmlDeviceGetComputeRunningProcesses_v2 = "nvmlDeviceGetComputeRunningProcesses_v2"
 )
 
@@ -95,6 +94,7 @@ type nvmlFieldValue struct {
 	Value         nvmlValue
 }
 
+// nvmlProcessInfo mirrors nvmlProcessInfo_v2_t, including both MIG instance IDs.
 // ref: https://github.com/NVIDIA/nvidia-settings/blob/bb364318e301b0702ab2a6f6a5e84321ee966e11/src/nvml.h#L312
 type nvmlProcessInfo struct {
 	Pid               uint32
@@ -115,8 +115,8 @@ var (
 	nvmlDeviceGetFieldValues      func(device nvmlDeviceHandle, valuesCount int, values []nvmlFieldValue) nvmlReturn
 	nvmlDeviceGetUUID             func(device nvmlDeviceHandle, uuid *byte, length uint32) nvmlReturn
 	nvmlDeviceGetName             func(device nvmlDeviceHandle, name *byte, length uint32) nvmlReturn
-	// nvmlDeviceGetComputeRunningProcesses is resolved at load time to either
-	// _v3 (preferred) or _v2 (older driver fallback). Both accept the same
-	// argument layout; v3 populates GpuInstanceId/ComputeInstanceId for MIG.
+	// Bind only _v2, whose record layout matches nvmlProcessInfo. Early R535
+	// drivers used a larger record for _v3 than later drivers, so the _v3 symbol
+	// alone does not establish a compatible ABI.
 	nvmlDeviceGetComputeRunningProcesses func(device nvmlDeviceHandle, count *uint32, infos []nvmlProcessInfo) nvmlReturn
 )
