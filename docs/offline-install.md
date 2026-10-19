@@ -92,8 +92,9 @@ install -m 0755 utlz-linux-amd64 ~/.local/bin/utlz
 ln -sf utlz ~/.local/bin/utilyze
 # make sure ~/.local/bin is on your PATH
 
-mkdir -p ~/.cache/utlz/cupti-<version>
-cp cupti/libnvperf_host.so cupti/libnvperf_target.so ~/.cache/utlz/cupti-<version>/
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
+mkdir -p "$cache_root/utlz/cupti-<version>"
+cp cupti/libnvperf_host.so cupti/libnvperf_target.so "$cache_root/utlz/cupti-<version>/"
 ```
 
 Run:
@@ -108,4 +109,4 @@ utlz
 utlz --version
 ```
 
-Then start it (`sudo utlz` or `utlz` depending on path). You should see the live monitoring TUI. If `utlz` cannot find CUPTI, check that both libraries are directly inside `/usr/local/lib/utilyze/cupti/` for privileged runs, or `~/.cache/utlz/cupti-<version>/` for unprivileged runs. For privileged runs, also check ownership and permissions of the libraries and every parent directory. The root user's cache is not a privileged search location.
+Then start it (`sudo utlz` or `utlz` depending on path). You should see the live monitoring TUI. If `utlz` cannot find CUPTI, check that both libraries are directly inside `/usr/local/lib/utilyze/cupti/` for privileged runs, or `$cache_root/utlz/cupti-<version>/` for unprivileged runs, where `cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"` as in the install commands above. For privileged runs, also check ownership and permissions of the libraries and every parent directory. The root user's cache is not a privileged search location.
