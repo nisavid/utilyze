@@ -70,7 +70,7 @@ Run:
 sudo utlz
 ```
 
-All parent directories, including `/usr/local/lib/utilyze`, must also be root-owned and not group- or world-writable. Start `utlz` without `LD_LIBRARY_PATH`; privileged library loading rejects it rather than letting it redirect dependencies. Administrator-installed libraries and the system dynamic linker configuration remain trusted.
+All parent directories, including `/usr/local/lib/utilyze`, must also be root-owned and not group- or world-writable. Start `utlz` with `LD_LIBRARY_PATH` unset, not merely empty; privileged library loading rejects it rather than letting it redirect dependencies. Administrator-installed libraries and the system dynamic linker configuration remain trusted.
 
 ### Option 2: Run without `sudo` (requires one-time host admin setup)
 

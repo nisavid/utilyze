@@ -15,7 +15,9 @@ import (
 
 // The dynamic linker retains its startup search path. Clearing the environment
 // later does not prevent a dependency from being loaded through that path.
-var initialLibraryPath = os.Getenv("LD_LIBRARY_PATH")
+// Check presence, not value: Go and the dynamic linker can select different
+// occurrences when execve supplies duplicate environment keys.
+var _, initialLibraryPathSet = os.LookupEnv("LD_LIBRARY_PATH")
 
 func requiresTrustedLibraries() (bool, error) {
 	hdr := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
@@ -44,7 +46,7 @@ func isPrivileged(uid, euid, suid, gid, egid, sgid int, data [2]unix.CapUserData
 
 func libraryPaths(dir string, restricted bool) ([]string, error) {
 	if restricted {
-		if initialLibraryPath != "" {
+		if initialLibraryPathSet {
 			return nil, errors.New("privileged CUPTI loading requires starting utlz without LD_LIBRARY_PATH")
 		}
 		if !filepath.IsAbs(dir) {

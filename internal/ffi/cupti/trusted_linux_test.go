@@ -54,9 +54,9 @@ func TestIsPrivileged(t *testing.T) {
 }
 
 func TestLibraryPathsRejectRelativeDirectories(t *testing.T) {
-	initial := initialLibraryPath
-	initialLibraryPath = ""
-	t.Cleanup(func() { initialLibraryPath = initial })
+	initial := initialLibraryPathSet
+	initialLibraryPathSet = false
+	t.Cleanup(func() { initialLibraryPathSet = initial })
 	for _, dir := range []string{"", ".", "relative/cupti"} {
 		if _, err := libraryPaths(dir, true); err == nil || !strings.Contains(err.Error(), "absolute") {
 			t.Errorf("libraryPaths(%q, true) = %v; want absolute-directory rejection", dir, err)
@@ -199,7 +199,47 @@ __attribute__((constructor)) static void init(void) { mark('T'); }
 `)
 }
 
-func runLoader(t *testing.T, dir, mode, startupPath string) string {
+func buildRawExecLauncher(t *testing.T) string {
+	t.Helper()
+	gcc, err := exec.LookPath("gcc")
+	if err != nil {
+		t.Skip("gcc is required for raw execve environment fixtures")
+	}
+	path := filepath.Join(t.TempDir(), "raw-exec")
+	cmd := exec.Command(gcc, "-o", path, "-x", "c", "-")
+	cmd.Stdin = strings.NewReader(`
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+extern char **environ;
+int main(int argc, char **argv) {
+    if (argc != 4) return 111;
+    size_t count = 0;
+    while (environ[count]) count++;
+    char **env = calloc(count + 3, sizeof(*env));
+    if (!env) return 111;
+    memcpy(env, environ, count * sizeof(*env));
+    env[count++] = "LD_LIBRARY_PATH=";
+    if (argv[3][0]) {
+        size_t size = strlen(argv[3]) + sizeof("LD_LIBRARY_PATH=");
+        env[count] = malloc(size);
+        if (!env[count]) return 111;
+        snprintf(env[count], size, "LD_LIBRARY_PATH=%s", argv[3]);
+    }
+    char *args[] = {argv[1], argv[2], NULL};
+    execve(argv[1], args, env);
+    perror("execve");
+    return 111;
+}
+`)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build raw execve launcher: %v\n%s", err, output)
+	}
+	return path
+}
+
+func runLoader(t *testing.T, dir, mode, startupPath string, rawLauncher ...string) string {
 	t.Helper()
 	marker := filepath.Join(t.TempDir(), "constructor-marker")
 	executable, err := os.Executable()
@@ -207,13 +247,22 @@ func runLoader(t *testing.T, dir, mode, startupPath string) string {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(executable, "-test.run=^TestCUPTILoaderProcess$")
+	if len(rawLauncher) != 0 {
+		// os/exec deduplicates Env; C preserves the exact duplicate vector.
+		cmd = exec.Command(rawLauncher[0], executable, "-test.run=^TestCUPTILoaderProcess$", startupPath)
+	}
 	for _, value := range os.Environ() {
 		if !strings.HasPrefix(value, "LD_LIBRARY_PATH=") && !strings.HasPrefix(value, "UTLZ_CUPTI_TEST_") {
 			cmd.Env = append(cmd.Env, value)
 		}
 	}
 	cmd.Env = append(cmd.Env, "UTLZ_CUPTI_TEST_MODE="+mode, "UTLZ_CUPTI_TEST_DIR="+dir,
-		"UTLZ_CUPTI_TEST_MARKER="+marker, "LD_LIBRARY_PATH="+startupPath)
+		"UTLZ_CUPTI_TEST_MARKER="+marker)
+	if len(rawLauncher) != 0 {
+		cmd.Env = append(cmd.Env, "UTLZ_CUPTI_TEST_FIRST_EMPTY=1")
+	} else if startupPath != "" {
+		cmd.Env = append(cmd.Env, "LD_LIBRARY_PATH="+startupPath)
+	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("loader %s: %v\n%s", mode, err, output)
 	}
@@ -234,7 +283,10 @@ func TestCUPTILoaderProcess(t *testing.T) {
 		return
 	}
 	dir := os.Getenv("UTLZ_CUPTI_TEST_DIR")
-	startupPath := os.Getenv("LD_LIBRARY_PATH")
+	startupPath, startupSet := os.LookupEnv("LD_LIBRARY_PATH")
+	if os.Getenv("UTLZ_CUPTI_TEST_FIRST_EMPTY") != "" && (!startupSet || startupPath != "") {
+		t.Fatal("raw launcher did not expose the first empty LD_LIBRARY_PATH to Go")
+	}
 	if err := os.Unsetenv("LD_LIBRARY_PATH"); err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +319,7 @@ func TestCUPTILoaderProcess(t *testing.T) {
 		if err == nil {
 			t.Fatal("privileged load unexpectedly succeeded")
 		}
-		if startupPath != "" && !strings.Contains(err.Error(), "LD_LIBRARY_PATH") {
+		if startupSet && !strings.Contains(err.Error(), "LD_LIBRARY_PATH") {
 			t.Fatalf("startup linker path was not rejected: %v", err)
 		}
 	} else if err != nil {
@@ -311,6 +363,8 @@ func TestPrivilegedCUPTILoadRoot(t *testing.T) {
 func TestStartupLibraryPathDependencyRoot(t *testing.T) {
 	dir, dependencies := rootTempDir(t), t.TempDir()
 	buildPair(t, dir)
+	launcher := buildRawExecLauncher(t)
+	runLoader(t, dir, "reject", "", launcher)
 	buildLibrary(t, dependencies, "libfixture_dependency.so", `
 __attribute__((constructor)) static void init(void) { mark('D'); }
 void fixture_dependency(void) { }
@@ -324,4 +378,8 @@ void NVPW_Device_RawCounterConfig_Create(void) { }
 		t.Fatal("control did not load dependency through startup LD_LIBRARY_PATH")
 	}
 	runLoader(t, dir, "reject", dependencies)
+	if marker := runLoader(t, dir, "legacy", dependencies, launcher); !strings.Contains(marker, "D") {
+		t.Fatal("duplicate environment control did not load dependency through the last LD_LIBRARY_PATH")
+	}
+	runLoader(t, dir, "reject", dependencies, launcher)
 }
