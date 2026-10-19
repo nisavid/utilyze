@@ -38,7 +38,11 @@ iex (curl.exe -L https://systalyze.com/utilyze/install.ps1 | Out-String)
 
 Utilyze will likely require root for profiling capabilities depending on your host configuration (see below) and will prompt you for your password during installation to install it system-wide.
 
-If CUPTI 12+ is not found, `utlz` will prompt you to install the latest release from PyPI on first run.
+Unprivileged runs can discover CUPTI 12+ in user packages and caches, or prompt to download it from PyPI. When running as root, with capabilities, or with elevated user/group IDs, `utlz` only loads CUPTI from administrator-managed system directories. Both libraries and every parent directory of their resolved paths must be owned by root and must not be writable by group or other users. Symlinks into trusted system installations are supported.
+
+For privileged runs, install CUPTI through the CUDA toolkit, a system Python package, or place `libnvperf_host.so` and `libnvperf_target.so` in `/usr/local/lib/utilyze/cupti`. Start the program without `LD_LIBRARY_PATH`; it can redirect native dependencies even when the initial library paths are absolute. The system dynamic linker configuration and administrator-installed libraries (including their dependency paths) must also be trusted.
+
+For machines without internet access (e.g., airgapped machines), see [docs/offline-install.md](docs/offline-install.md).
 
 ## Usage
 

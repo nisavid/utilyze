@@ -1,0 +1,40 @@
+name: CUPTI loader tests
+
+on:
+  pull_request:
+    paths:
+      - internal/ffi/cupti/**
+      - internal/pypi/**
+      - internal/format/**
+      - go.mod
+      - go.sum
+      - .github/workflows/cupti-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l internal/ffi/cupti)"
+      - name: Test ordinary user and race safety
+        run: go test -race -count=1 -v ./internal/ffi/cupti
+      - name: Test root-owned library paths and constructors
+        run: |
+          sudo env "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
+            "$(command -v go)" test -count=1 -v ./internal/ffi/cupti
+      - name: Compile Linux arm64 tests
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go test -c -o /tmp/cupti-arm64.test ./internal/ffi/cupti

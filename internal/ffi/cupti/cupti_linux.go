@@ -44,6 +44,17 @@ func cacheDir() (string, error) {
 }
 
 func load() error {
+	restricted, err := requiresTrustedLibraries()
+	if err != nil {
+		return err
+	}
+	if restricted {
+		if err := loadFromDirs(systemSearchDirs()); err != nil {
+			return fmt.Errorf("privileged CUPTI loading requires an administrator-installed library pair in a system directory (for example /usr/local/lib/utilyze/cupti); user packages, caches, and downloads are disabled: %w", err)
+		}
+		return nil
+	}
+
 	// try loading from LD_LIBRARY_PATH first
 	if err := loadFromDir(""); err == nil {
 		return nil
@@ -101,6 +112,9 @@ func load() error {
 }
 
 func loadFromDirs(dirs []string) error {
+	if len(dirs) == 0 {
+		return errors.New("no CUPTI library directories found")
+	}
 	var err error
 	for _, dir := range dirs {
 		loadErr := loadFromDir(dir)
@@ -113,6 +127,20 @@ func loadFromDirs(dirs []string) error {
 }
 
 func loadFromDir(dir string) (err error) {
+	restricted, err := requiresTrustedLibraries()
+	if err != nil {
+		return err
+	}
+	return loadFromDirWithPolicy(dir, restricted)
+}
+
+func loadFromDirWithPolicy(dir string, restricted bool) (err error) {
+	// Resolve and validate the entire pair before opening either library: the
+	// first Dlopen can execute constructors or load the second as a dependency.
+	paths, err := libraryPaths(dir, restricted)
+	if err != nil {
+		return err
+	}
 	handles := make([]uintptr, 0, len(requiredLibs))
 	defer func() {
 		if err != nil {
@@ -122,9 +150,7 @@ func loadFromDir(dir string) (err error) {
 		}
 	}()
 
-	for _, lib := range requiredLibs {
-		path := filepath.Join(dir, lib)
-
+	for _, path := range paths {
 		var handle uintptr
 		handle, err = purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 		if err != nil {
@@ -142,19 +168,33 @@ func loadFromDir(dir string) (err error) {
 }
 
 func searchDirs() []string {
-	dirs := []string{
+	dirs := systemSearchDirs()
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		dirs = append(dirs, globPaths(filepath.Join(home, ".local/lib/python*/site-packages/nvidia/cuda_cupti/lib"))...)
+	}
+	return dirs
+}
+
+func systemSearchDirs() []string {
+	return globPaths(
+		"/usr/local/lib/utilyze/cupti",
+		"/usr/local/lib",
+		"/usr/local/lib64",
+		"/usr/lib",
+		"/usr/lib64",
+		"/usr/lib/*-linux-gnu",
+		"/lib",
+		"/lib64",
+		"/lib/*-linux-gnu",
 		"/usr/local/cuda*/targets/*/lib",
+		"/usr/local/cuda*/extras/CUPTI/lib64",
 		"/opt/nvidia/nsight-compute/*/target/linux-desktop-glibc_2_11_3-x64",
 		"/usr/lib/python*/dist-packages/nvidia/cuda_cupti/lib",
 		"/usr/local/lib/python*/dist-packages/nvidia/cuda_cupti/lib",
 		"/usr/lib/python*/site-packages/nvidia/cuda_cupti/lib",
-	}
-
-	home, err := os.UserHomeDir()
-	if err == nil && home != "" {
-		dirs = append(dirs, filepath.Join(home, ".local/lib/python*/site-packages/nvidia/cuda_cupti/lib"))
-	}
-	return globPaths(dirs...)
+		"/usr/local/lib/python*/site-packages/nvidia/cuda_cupti/lib",
+	)
 }
 
 func globPaths(patterns ...string) []string {
