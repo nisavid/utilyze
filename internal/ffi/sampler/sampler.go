@@ -51,6 +51,9 @@ func Init(deviceIds []int, metrics []string, interval time.Duration) (*Sampler, 
 
 	ids := make([]int32, len(deviceIds))
 	for i, id := range deviceIds {
+		if id < 0 || id > math.MaxInt32 {
+			return nil, fmt.Errorf("invalid device ID %d: must be between 0 and %d", id, math.MaxInt32)
+		}
 		ids[i] = int32(id)
 	}
 
